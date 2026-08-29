@@ -34,4 +34,6 @@ Optional: `pip install` this package in that app too, then `bots run` from there
 .agents/skills/<name>/SKILL.md
 ```
 
+Playbook (coding task, existing incident agent, efficiency checks): [HOWTO.md](HOWTO.md).
+
 Plan: [PLAN.md](PLAN.md).
