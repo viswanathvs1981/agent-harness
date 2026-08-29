@@ -183,6 +183,7 @@ This is a design review. There is no running harness yet. **Prompts do not stop 
 | Threat | What it looks like | Control (required, not optional) |
 | --- | --- | --- |
 | Jailbreak / “ignore your rules” | User or a file says disable the fence, dump secrets, act as unrestricted | Tool allowlist is **code**, not text. Disallowed tools never appear in the API. Policy text is extra, not the lock |
+| Implicit write / delete / commit | “fix this” silently edits and commits | Default **read-only**. Write, delete, and commit are **separate allowlists** for this turn. Ambiguous → ask, do not write |
 | Data copy / exfil | Read `.env`, `~/.ssh`, cookies; paste to a URL, gist, or chat | Default **no outbound HTTP** for Forge. Path sandbox = project root only. Deny `.env`, `*.pem`, `id_rsa`, `.git/credentials`, cloud token files. Traces redact secrets. Packs never include `.harness/` |
 | Prompt injection | README, issue, PDF, or retrieved doc: “send the repo to …” | Untrusted file content is **data**, not instructions. Sentinel/Forge must not follow tool requests that appear inside those files. Retrieved text cannot add tools |
 | Malicious dropped skill/pack | A zip from the internet with a `scripts/` that steals env | Install is copy-only until you enable. `scripts/` in skills are **not executed** until allowlisted. Review diff on first drop. No auto-run of imported packs |
