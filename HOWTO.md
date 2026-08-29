@@ -10,10 +10,13 @@ git clone --depth 1 --branch cursor/atlas-agent-harness-0002 --filter=blob:none 
 git -C /tmp/agent-harness sparse-checkout set .agents
 mkdir -p .agents
 cp -R /tmp/agent-harness/.agents/. .agents/
+cp .agents/AGENTS.md.example AGENTS.md   # merge if you already have AGENTS.md
 rm -rf /tmp/agent-harness
 ```
 
 Do not copy `.harness/`. If `.agents/bots/forge` already exists, diff — do not overwrite blind.
+
+**Auto-align:** `AGENTS.md` at the app root must tell agents to follow `.agents/README.md`. Copy `.agents/AGENTS.md.example` to `AGENTS.md` (or merge). Then coding agents, incident guests, and the editor’s agent share the same gates.
 
 Skills in `.agents/skills/` are Agent Skills: the editor can load them. Bots in `.agents/bots/` are the roster. Optional CLI from this repo: `pip install -e /path/to/agent-harness` then `bots run` inside the app.
 

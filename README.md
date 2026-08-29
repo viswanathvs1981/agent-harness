@@ -15,15 +15,17 @@ bots run "implement a helper and add tests" --bot forge
 
 ```bash
 cd /path/to/your-app
-git clone --depth 1 --filter=blob:none --sparse \
+git clone --depth 1 --branch cursor/atlas-agent-harness-0002 --filter=blob:none --sparse \
   https://github.com/viswanathvs1981/agent-harness.git /tmp/agent-harness
 git -C /tmp/agent-harness sparse-checkout set .agents
 mkdir -p .agents
 cp -R /tmp/agent-harness/.agents/. .agents/
+# so other agents in THAT app auto-align:
+cp .agents/AGENTS.md.example AGENTS.md   # or merge into your existing AGENTS.md
 rm -rf /tmp/agent-harness
 ```
 
-Open that app in your editor. Skills live in `.agents/skills/` (Agent Skills layout). Bots live in `.agents/bots/`. Do not copy `.harness/`.
+Other agents should then follow `.agents/README.md` (coding, complex slices, long-run caps, token rules). Skills load from `.agents/skills/`. Do not copy `.harness/`.
 
 Optional: `pip install` this package in that app too, then `bots run` from there.
 

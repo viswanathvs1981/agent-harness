@@ -1,0 +1,15 @@
+# Copy this file to the **root** of an existing app as `AGENTS.md`
+
+(so other agents in that repo align without extra prompting)
+
+Follow **`.agents/README.md`** as the operating contract.
+
+- Bots: `.agents/bots/*/BOT.md`
+- Skills: `.agents/skills/*/SKILL.md` (names first; full skill only when needed)
+- Default **read-only**: no file updates, deletes, or commits unless the human clearly asks
+- Coding → Forge, small slice, no commit unless asked
+- Complex → slice, bounded run, next turn
+- Long-running → not overnight unless they opted into a routine; cap 24 steps / 3 retries / 10 minutes per turn
+- Save tokens: one bot, don’t load every skill, don’t paste the whole repo
+
+If an older `AGENTS.md` / rules file conflicts, **`.agents/README.md` wins** unless the human overrides.
