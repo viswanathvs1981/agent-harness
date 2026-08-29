@@ -29,6 +29,26 @@ Forge: red test landed, writing the module
 
 **Forge** is the separate coding bot. No prod DB, no deploy.
 
+## Default: do not change the repo unless you say so
+
+Bots start **read-only**. They may read, search, explain, and **propose** a diff in the chat. They must not, unless this message (or a later explicit one) says so:
+
+| Action | Default | Turns on only if you say so |
+| --- | --- | --- |
+| Create / update files | Off | “implement”, “apply”, “write”, “fix”, “refactor”, “go ahead” |
+| Delete files or git deletes | Off | “delete” / “remove” naming the paths. Propose first, then apply |
+| `git commit` / `git push` | Off | “commit” / “push”. Never implied by “implement” |
+| Install / change `.agents/` | Off | “install the bots” / “drop this skill” |
+| Network, prod, deploy | Off | Never from a vague prompt |
+
+“Implement auth” is **write** in the project tree, still **not** a commit. “Fix the bug” is write. “How does auth work?” is read-only. If ambiguous, **ask**, stay read-only.
+
+Enforced in the **tool allowlist for this turn**, not in the prompt. Read-only turn: no `write`, no `delete`, no `git commit`. Write turn: `write` inside the project boundary, still no `delete` or `commit` unless those words were given. Delete and commit are separate gates.
+
+**Boundary (always on):** project root only. No `../` out of the repo. No `.env`, keys, `*.pem`, `.git/credentials`. No home directory. Forge still has no prod DB / deploy even in write mode.
+
+`.harness/` is local scratch (checkpoints). Bots do not treat that as a place to dump your app. They do not rewrite `.agents/` unless you are installing or promoting a skill.
+
 ## A task will not take forever
 
 Interactive (you sent a message):
@@ -47,7 +67,7 @@ Routines (opt-in, scheduled) are the only path that runs while you are away. The
 
 ## Where files live (this repo / this project)
 
-On first use, create this in the **project root** (the folder you opened in Cursor or VS Code):
+On **explicit install** (“install the bots in this repo”), create this in the **project root**:
 
 ```
 .agents/
@@ -113,7 +133,7 @@ You never draw this. Chat is the UI. Two layers:
 
 **Graph (outer) — who runs, when we stop.** Fixed nodes and edges. Code owns structure: route → maybe Shaper → specialist → eval gate → retry or done. Loops in the graph are explicit and **bounded** (eval fail → same bot, max 3, then stop and ask you). Parallel only when Atlas `@`s more than one bot (cap 3).
 
-**Loop (inner) — what that bot does next.** One bot, one context, one allowlist. Each step the model chooses: think, `/skill`, tool, `@` another bot, ask you, or finish. Cap **24 steps** and **10 minutes**. This is the harness: the model picks the next action *inside* a node, not across the whole company.
+**Loop (inner) — what that bot does next.** One bot, one context, one allowlist **for this turn**. Read-only until you enable write/delete/commit. Each step the model chooses: think, `/skill`, tool, `@` another bot, ask you, or finish. Cap **24 steps** and **10 minutes**.
 
 ```
 message
@@ -139,7 +159,7 @@ Engineering rules: no unbounded `while true`. Eval is a **gate**, not a log line
 
 ## Isolation
 
-Shared project files. **Per-bot tool allowlist.** Forge cannot deploy.
+Shared project files. **Per-bot tool allowlist, per turn.** Default read-only. Write / delete / commit are separate gates. Forge cannot deploy.
 
 ## Pack
 
@@ -174,7 +194,7 @@ This is a design review. There is no running harness yet. **Prompts do not stop 
 
 Honest limits: a determined jailbreak plus a **granted** tool (e.g. you gave Forge `shell` and network) can still do damage. Do not grant prod credentials. Cursor/VS Code’s own agent, if you `@` it with full IDE tools, is **outside** this fence — dropping skills into `.agents/skills/` only adds instructions those products will load; their security model still applies. This pack must not ask them to disable safety or to exfiltrate.
 
-Default Forge tools: `files` (project only), `git` (non-force, no credential dump), tests. Not: browser, arbitrary curl, prod_db, deploy, read-home-directory.
+Default Forge tools **when write is on**: `files` (project only, no delete unless asked), `git` status/diff (no commit unless asked), tests. Not: browser, arbitrary curl, prod_db, deploy, read-home-directory. **When write is off:** read/search only.
 
 ## Install from GitHub into another repo
 
