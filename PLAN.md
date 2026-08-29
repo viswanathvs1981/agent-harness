@@ -107,9 +107,35 @@ Workspace code (the app you are building) stays in the rest of the repo. Bots ed
 | Checkpoints, memory, traces | `.harness/state/` | No |
 | Skill drafts | `.harness/evolved-skills/` | No until you promote |
 
-## Graph / loop (invisible)
+## Graph and loop engineering (invisible)
 
-think → tool or `/skill` or `@bot` → eval. Fail retries the **same** bot, max 3. Then stop.
+You never draw this. Chat is the UI. Two layers:
+
+**Graph (outer) — who runs, when we stop.** Fixed nodes and edges. Code owns structure: route → maybe Shaper → specialist → eval gate → retry or done. Loops in the graph are explicit and **bounded** (eval fail → same bot, max 3, then stop and ask you). Parallel only when Atlas `@`s more than one bot (cap 3).
+
+**Loop (inner) — what that bot does next.** One bot, one context, one allowlist. Each step the model chooses: think, `/skill`, tool, `@` another bot, ask you, or finish. Cap **24 steps** and **10 minutes**. This is the harness: the model picks the next action *inside* a node, not across the whole company.
+
+```
+message
+  → GRAPH: Atlas routes (or you @Forge)
+       → LOOP(Forge): think → /verifier-first → edit → test → finish
+       → GRAPH: eval
+            fail  → back to LOOP(Forge)   (attempt 2 of 3)
+            fail  → back to LOOP(Forge)   (attempt 3 of 3)
+            fail  → STOP, report leftover
+            pass  → optional Reviewer/Sentinel
+       → GRAPH: done (Coach may draft a skill, not auto-merge)
+```
+
+Three loops, not one infinite brain:
+
+| Loop | Runs in | Bound | Closes with |
+| --- | --- | --- | --- |
+| Inner (ReAct) | one bot | 24 steps / 10 min | finish, ask you, or budget |
+| Eval (graph edge) | same specialist | 3 retries | test / allowlist score ≥ bar, or stop |
+| Improve (Coach) | after a pass | you promote | new `SKILL.md` draft only |
+
+Engineering rules: no unbounded `while true`. Eval is a **gate**, not a log line. `@` starts a child loop with a **clean context** and that bot’s tools — Forge does not inherit Bridge. Workflow (graph) where the sequence is known; inner loop where the next edit depends on the last test.
 
 ## Isolation
 
