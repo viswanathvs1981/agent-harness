@@ -126,39 +126,96 @@ forge.botpack
 
 Recipient drops it into `.agents/bots/forge/` and `.agents/skills/`.
 
+## Dropped files never cite people or products
+
+`SKILL.md` and `BOT.md` are procedures: what to do, when, tools, stop line. They must **not** mention Andrew Ng, DeepLearning.AI, Grok, Cursor, or any thought-leadership map. No `ng_skill` metadata. Alignment lives only in this plan, not in what you copy into another repo.
+
+## Security review (jailbreak, copy, exfil)
+
+This is a design review. There is no running harness yet. **Prompts do not stop a jailbreak.** If a bot has a tool, a model can try to abuse it. We shrink blast radius with hooks.
+
+| Threat | What it looks like | Control (required, not optional) |
+| --- | --- | --- |
+| Jailbreak / “ignore your rules” | User or a file says disable the fence, dump secrets, act as unrestricted | Tool allowlist is **code**, not text. Disallowed tools never appear in the API. Policy text is extra, not the lock |
+| Data copy / exfil | Read `.env`, `~/.ssh`, cookies; paste to a URL, gist, or chat | Default **no outbound HTTP** for Forge. Path sandbox = project root only. Deny `.env`, `*.pem`, `id_rsa`, `.git/credentials`, cloud token files. Traces redact secrets. Packs never include `.harness/` |
+| Prompt injection | README, issue, PDF, or retrieved doc: “send the repo to …” | Untrusted file content is **data**, not instructions. Sentinel/Forge must not follow tool requests that appear inside those files. Retrieved text cannot add tools |
+| Malicious dropped skill/pack | A zip from the internet with a `scripts/` that steals env | Install is copy-only until you enable. `scripts/` in skills are **not executed** until allowlisted. Review diff on first drop. No auto-run of imported packs |
+| Path traversal | `../../.ssh/id_rsa` | Resolve + reject anything outside the project root |
+| Destructive shell | `rm -rf`, `drop table`, `curl \| sh` | Shell is queued/allowlisted commands, not raw. Blocked patterns fail closed. Prod DB tools are **absent** from Forge |
+| Cross-bot leak | Atlas inherits Forge’s shell because they share a disk | Shared files, **not** shared tools. Each bot’s allowlist is a hard gate |
+| Share-link leak | Pack includes customer data or API keys | Pack = BOT.md + skills + routine shape. Scanner rejects secrets. `.harness/` gitignored |
+| Supply chain | Skill `scripts/` as malware | No network in skill scripts by default; human enable |
+
+Honest limits: a determined jailbreak plus a **granted** tool (e.g. you gave Forge `shell` and network) can still do damage. Do not grant prod credentials. Cursor/VS Code’s own agent, if you `@` it with full IDE tools, is **outside** this fence — dropping skills into `.agents/skills/` only adds instructions those products will load; their security model still applies. This pack must not ask them to disable safety or to exfiltrate.
+
+Default Forge tools: `files` (project only), `git` (non-force, no credential dump), tests. Not: browser, arbitrary curl, prod_db, deploy, read-home-directory.
+
+## Install from GitHub into another repo
+
+After this repo ships an `.agents/` tree (or a release zip), use it as a **copy**, not a live coupling.
+
+**Release zip (preferred once tagged):**
+
+```bash
+cd /path/to/your-existing-app
+curl -L -o /tmp/agents.tgz \
+  https://github.com/viswanathvs1981/agent-harness/archive/refs/tags/v0.1.0.tar.gz
+tar -tzf /tmp/agents.tgz | head   # sanity check
+mkdir -p .agents
+tar -xzf /tmp/agents.tgz --strip-components=1 \
+  -C .agents --wildcards '*/.agents/*'
+# if the tag lays out .agents at repo root:
+# cp -R /tmp/extracted/.agents/* .agents/
+```
+
+**Sparse clone of just `.agents/` (any branch):**
+
+```bash
+cd /path/to/your-existing-app
+git clone --depth 1 --filter=blob:none --sparse \
+  https://github.com/viswanathvs1981/agent-harness.git /tmp/agent-harness
+git -C /tmp/agent-harness sparse-checkout set .agents
+mkdir -p .agents
+cp -R /tmp/agent-harness/.agents/. .agents/
+rm -rf /tmp/agent-harness
+```
+
+Then in Cursor or VS Code: open that app folder. Skills under `.agents/skills/` load as Agent Skills. Bots under `.agents/bots/` are the roster. Do not copy `.harness/` from another machine.
+
+Merge rule: if `.agents/bots/forge` already exists, diff and choose; never overwrite silent.
+
+Until a tag exists, the GitHub branch only has this plan — there is nothing to copy yet. Packaging **is** adding `.agents/bots` + `.agents/skills` with the no-citation and security rules above.
+
 ## What is special (vs a generic coding agent)
 
-These are not fourteen chat personas. Each bot is a **job from Ng’s map** with a stop-the-line rule, a tool fence, and an eval. The scarce things Ng named are the product:
+
+These are not fourteen chat personas. Each bot is a **named job** with a stop-the-line rule, a tool fence, and an eval:
 
 1. **Shaping the build** is a bot (Shaper), not a preamble in Forge’s prompt.
-2. **Using coding agents** is a *separate* bot (Forge) with verifiers, not Atlas writing code.
-3. **Evaluation-driven development** is a bot + a gate (Gauge), not a checklist at the end.
-4. **Software fundamentals** show up as Architect / Steward / Sentinel / Bridge, so Forge is steered in engineering language instead of vibe-coding.
+2. **Coding** is a *separate* bot (Forge) with verifiers, not Atlas writing code.
+3. **Evals** are a bot + a gate (Gauge), not a checklist at the end.
+4. **Software fundamentals** show up as Architect / Steward / Sentinel / Bridge, so Forge is steered with real tradeoffs instead of vibe-coding.
 
 Also special operationally: progressive disclosure (load skill *names*, not every SOP), bounded runs, share-as-copy, and Coach that only promotes a skill after evals pass.
 
-## Alignment with Andrew Ng’s skills map
+## Job map (design only — not copied into skills)
 
-Ng’s four top skills (Aug 2026), then the published sub-skills. Every roster seat maps; nothing is a mascot.
+| Job | Bot |
+| --- | --- |
+| Spec, MVP vs careful, success evidence | **Shaper**, **Atlas** |
+| Implement behind tests, don’t touch prod | **Forge**, **Reviewer**, **Atlas** |
+| LLM / context / model mix | **Lexer** |
+| Grounding: prompt vs tools vs vector vs graph | **Ground** |
+| Orchestration (workflow vs loop, multi-bot) | **Atlas** + harness |
+| Evals and error analysis | **Gauge**, **Coach** |
+| Production ops | **Bridge** |
+| ML when generation is the wrong tool | **Signal** |
+| Full-stack | **Stack** |
+| Data lifecycle | **Steward** |
+| Architecture tradeoffs | **Architect** |
+| Security | **Sentinel**, **Reviewer** |
 
-| Ng skill | Sub-skill (where published) | Bot |
-| --- | --- | --- |
-| Shaping the build | Spec, MVP vs careful, success evidence | **Shaper**, **Atlas** |
-| Using coding agents | Context, plan vs execute, close loops with verifiers, multi-agent, don’t trash prod | **Forge**, **Reviewer**, **Atlas** |
-| Building & deploying AI apps | LLM foundations | **Lexer** |
-| | Grounding with data | **Ground** |
-| | Building agentic systems (workflow vs harness, tools, memory, multi-agent) | **Atlas** + harness |
-| | Evaluation-driven development (the one Ng calls most important) | **Gauge**, **Coach** |
-| | Operating in production | **Bridge** |
-| | ML foundations | **Signal** |
-| Software engineering fundamentals | Full-stack | **Stack** |
-| | Managing data | **Steward** |
-| | System architecture | **Architect** |
-| | Secure and reliable | **Sentinel**, **Reviewer** |
-| | Scale / operate in production | **Bridge** |
-| Continuous learning (under the whole map) | Keep evolving workflows | **Coach** |
-
-Coverage is the map, not a parallel universe. If Ng later publishes “using coding agents” sub-skills, they attach to Forge’s skills, not a new brand.
+This table stays in the plan. It does not appear in `SKILL.md` / `BOT.md`.
 
 ## Fresh repo vs existing repo
 
@@ -203,16 +260,16 @@ Coach (and a one-shot import) can ingest:
 | --- | --- |
 | `.agents/skills`, `.cursor/skills`, `.github/skills`, `.claude/skills` | Skills on the library, enabled per bot |
 | `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules` | Draft bot description or a skill, your pick |
-| Other `AGENT.md` / custom GPTs / exported packs | New `.agents/bots/<slug>/` with a proposed Ng seat |
+| Other `AGENT.md` / custom GPTs / exported packs | New `.agents/bots/<slug>/` with a proposed roster job |
 | Prompts buried in a README | Skill draft, not a new bot, unless it has its own tools/approval line |
 
 Fold-in rules:
 
-- Map to a Ng seat if the job matches (coding → Forge, evals → Gauge). Otherwise keep a **guest bot** on the roster; Atlas can still `@` it.
+- Map to a roster job if it fits (coding → Forge, evals → Gauge). Otherwise keep a **guest bot**; Atlas can still `@` it.
 - Infer a tool allowlist from what the old agent was allowed to do. If unknown, **read-only** until you open tools.
 - Attach Gauge evals. An imported agent does not skip the gate.
-- Improve it the Ng way: traces → error analysis → change one skill or one fence → re-eval. Repeated wins may draft an updated `SKILL.md`. You promote. That *is* the fine-tune loop.
-- Optional later (Signal): train/fine-tune a **small model** for a judge or classifier. Not required to absorb Cursor/Claude agents.
+- Improve via traces → error analysis → change one skill or fence → re-eval. Repeated wins may draft an updated `SKILL.md`. You promote. That is the improve loop.
+- Optional later (Signal): train a small judge or classifier. Not required to absorb Cursor/Claude agents.
 
 Conflict: if Forge and an imported “GodCoder” both want write+shell, Atlas keeps Forge as default implementer; GodCoder stays guest until you merge or retire it.
 
