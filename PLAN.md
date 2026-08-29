@@ -126,7 +126,98 @@ forge.botpack
 
 Recipient drops it into `.agents/bots/forge/` and `.agents/skills/`.
 
+## What is special (vs a generic coding agent)
+
+These are not fourteen chat personas. Each bot is a **job from Ng’s map** with a stop-the-line rule, a tool fence, and an eval. The scarce things Ng named are the product:
+
+1. **Shaping the build** is a bot (Shaper), not a preamble in Forge’s prompt.
+2. **Using coding agents** is a *separate* bot (Forge) with verifiers, not Atlas writing code.
+3. **Evaluation-driven development** is a bot + a gate (Gauge), not a checklist at the end.
+4. **Software fundamentals** show up as Architect / Steward / Sentinel / Bridge, so Forge is steered in engineering language instead of vibe-coding.
+
+Also special operationally: progressive disclosure (load skill *names*, not every SOP), bounded runs, share-as-copy, and Coach that only promotes a skill after evals pass.
+
+## Alignment with Andrew Ng’s skills map
+
+Ng’s four top skills (Aug 2026), then the published sub-skills. Every roster seat maps; nothing is a mascot.
+
+| Ng skill | Sub-skill (where published) | Bot |
+| --- | --- | --- |
+| Shaping the build | Spec, MVP vs careful, success evidence | **Shaper**, **Atlas** |
+| Using coding agents | Context, plan vs execute, close loops with verifiers, multi-agent, don’t trash prod | **Forge**, **Reviewer**, **Atlas** |
+| Building & deploying AI apps | LLM foundations | **Lexer** |
+| | Grounding with data | **Ground** |
+| | Building agentic systems (workflow vs harness, tools, memory, multi-agent) | **Atlas** + harness |
+| | Evaluation-driven development (the one Ng calls most important) | **Gauge**, **Coach** |
+| | Operating in production | **Bridge** |
+| | ML foundations | **Signal** |
+| Software engineering fundamentals | Full-stack | **Stack** |
+| | Managing data | **Steward** |
+| | System architecture | **Architect** |
+| | Secure and reliable | **Sentinel**, **Reviewer** |
+| | Scale / operate in production | **Bridge** |
+| Continuous learning (under the whole map) | Keep evolving workflows | **Coach** |
+
+Coverage is the map, not a parallel universe. If Ng later publishes “using coding agents” sub-skills, they attach to Forge’s skills, not a new brand.
+
+## Fresh repo vs existing repo
+
+**Fresh repo.** First open creates `.agents/` (starter five bots + core skills) and gitignored `.harness/`. There is almost no app code. Forge will not invent a product; Shaper has to write a spec or you give one. Atlas is the default chat.
+
+**Existing repo.** Same folders, **additive**. Nothing in `src/` is rewritten on install. The harness reads the tree (layouts, tests, existing agents) and **does not replace** `.cursor/rules`, `AGENTS.md`, `CLAUDE.md`, or Copilot instructions. Those are inbound candidates (see fold-in below).
+
+Operate the same in both: you message a bot; it only uses tools on its allowlist; it writes in the repo; Gauge scores; stop on budget. Difference is context: existing repo has code, tests, and maybe rival agent files. Fresh repo has none — Forge must be given a slice or it should refuse to “build the whole product.”
+
+If `.agents/` already exists, drop-in **merges by folder name**: same slug = you choose keep / replace / diff. Never silent overwrite.
+
+## How they operate (one task)
+
+1. You talk to Atlas (or `@Forge` directly).
+2. Atlas loads **metadata** of enabled skills (~name + when to use), not full text.
+3. If the spec is missing, `@Shaper`. If it is code, `@Forge` with a **fresh context** and Forge’s tools only.
+4. Forge activates one skill (e.g. verifier-first), edits files, runs a check, `record_eval`.
+5. Fail → Forge again, max 3. Pass → Reviewer/Sentinel only if the change is risky.
+6. Coach may **draft** a skill in `.harness/evolved-skills/`. You copy it into `.agents/skills/` to keep it.
+
+You never assign all 14. Idle bots cost zero.
+
+## Efficiency
+
+Cheap by default:
+
+- One bot in the loop unless Atlas `@`s another.
+- Skills: metadata first, body on activation, scripts only if needed.
+- Deterministic evals (tests, allowlists) before LLM-as-judge.
+- Caps: 24 steps, 3 retries, 10 minutes, 3 parallel bots.
+- No embeddings required; memory is a small graph + keywords.
+
+Expensive on purpose: Gauge judging prose, Sentinel on untrusted input, Architect on a greenfield design. Not expensive: “every message wakes the whole roster.”
+
+## Fold in and improve existing agents (“fine-tune”)
+
+**Yes, bring them into the fold. That is not GPU fine-tuning of model weights.** Weights stay the host model (Cursor/Grok/etc.). We fine-tune **behavior**: instructions, skills, tool fences, evals.
+
+Coach (and a one-shot import) can ingest:
+
+| Already in the repo | Becomes |
+| --- | --- |
+| `.agents/skills`, `.cursor/skills`, `.github/skills`, `.claude/skills` | Skills on the library, enabled per bot |
+| `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules` | Draft bot description or a skill, your pick |
+| Other `AGENT.md` / custom GPTs / exported packs | New `.agents/bots/<slug>/` with a proposed Ng seat |
+| Prompts buried in a README | Skill draft, not a new bot, unless it has its own tools/approval line |
+
+Fold-in rules:
+
+- Map to a Ng seat if the job matches (coding → Forge, evals → Gauge). Otherwise keep a **guest bot** on the roster; Atlas can still `@` it.
+- Infer a tool allowlist from what the old agent was allowed to do. If unknown, **read-only** until you open tools.
+- Attach Gauge evals. An imported agent does not skip the gate.
+- Improve it the Ng way: traces → error analysis → change one skill or one fence → re-eval. Repeated wins may draft an updated `SKILL.md`. You promote. That *is* the fine-tune loop.
+- Optional later (Signal): train/fine-tune a **small model** for a judge or classifier. Not required to absorb Cursor/Claude agents.
+
+Conflict: if Forge and an imported “GodCoder” both want write+shell, Atlas keeps Forge as default implementer; GodCoder stays guest until you merge or retire it.
+
 ## v1 will not include
+
 
 Graph editor. Per-bot VMs. Auto-commit of evolved skills. Required embeddings. All 14 bots on day one. Unbounded runs.
 
