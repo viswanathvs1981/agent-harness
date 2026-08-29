@@ -1,0 +1,27 @@
+{
+  "id": "default",
+  "description": "Hybrid workflow+harness: route, shape the spec, specialist loop, eval gate, evolve.",
+  "entry": "route",
+  "nodes": [
+    {"id": "route", "type": "router", "config": {"default": "conductor"}},
+    {"id": "shape", "type": "agent", "config": {"name": "spec"}},
+    {"id": "dispatch", "type": "agent", "config": {"name": "conductor"}},
+    {"id": "work", "type": "loop", "config": {"max_iters": 4}},
+    {"id": "review", "type": "agent", "config": {"name": "reviewer"}},
+    {"id": "eval", "type": "eval", "config": {"suite": "task"}},
+    {"id": "evolve", "type": "evolve", "config": {}},
+    {"id": "done", "type": "end", "config": {}}
+  ],
+  "edges": [
+    {"from": "route", "to": "shape", "when": "needs_spec"},
+    {"from": "route", "to": "dispatch", "when": "has_spec"},
+    {"from": "shape", "to": "dispatch"},
+    {"from": "dispatch", "to": "work"},
+    {"from": "work", "to": "eval"},
+    {"from": "eval", "to": "evolve", "when": "give_up", "kind": "loop"},
+    {"from": "eval", "to": "work", "when": "fail", "kind": "loop"},
+    {"from": "eval", "to": "review", "when": "pass"},
+    {"from": "review", "to": "evolve"},
+    {"from": "evolve", "to": "done"}
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "coding",
+  "description": "Isolated coding-agent loop with verifier-first inner loop and eval gate. Does not share ops tools.",
+  "entry": "spec",
+  "nodes": [
+    {"id": "spec", "type": "agent", "config": {"name": "spec"}},
+    {"id": "skill", "type": "skill", "config": {"name": "verifier-first-coding"}},
+    {"id": "code", "type": "loop", "config": {"agent": "coding", "max_iters": 8}},
+    {"id": "eval", "type": "eval", "config": {"suite": "task"}},
+    {"id": "review", "type": "agent", "config": {"name": "reviewer"}},
+    {"id": "evolve", "type": "evolve", "config": {}},
+    {"id": "done", "type": "end", "config": {}}
+  ],
+  "edges": [
+    {"from": "spec", "to": "skill"},
+    {"from": "skill", "to": "code"},
+    {"from": "code", "to": "eval"},
+    {"from": "eval", "to": "evolve", "when": "give_up", "kind": "loop"},
+    {"from": "eval", "to": "code", "when": "fail", "kind": "loop"},
+    {"from": "eval", "to": "review", "when": "pass"},
+    {"from": "review", "to": "evolve"},
+    {"from": "evolve", "to": "done"}
+  ]
+}

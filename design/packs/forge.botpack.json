@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "kind": "botpack",
+  "bot": {
+    "name": "Forge",
+    "slug": "forge",
+    "title": "Coding teammate",
+    "description": "Own implementation behind tests. Never production DB or deploy.",
+    "approval": "never-prod-db-or-deploy",
+    "tool_policy": ["files", "shell", "git", "record_eval"],
+    "skills": [
+      "verifier-first-coding",
+      "tdd-for-agents",
+      "context-management",
+      "close-the-loop"
+    ]
+  },
+  "share": {
+    "includes": ["profile", "skills", "routines"],
+    "excludes": ["memory", "computer", "transcripts", "secrets"]
+  },
+  "routines": []
+}
