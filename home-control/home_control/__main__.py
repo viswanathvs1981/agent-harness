@@ -22,8 +22,9 @@ def main() -> None:
     store = Path.home() / ".room" / "state.json"
     hub = Hub(demo=args.demo, plugin_path=args.plugin, store_path=store)
     bind = "127.0.0.1" if args.host in {"0.0.0.0", "::"} else args.host
+    mode = "DEMO (fake TVs)" if args.demo else "LIVE (this Mac's Wi-Fi)"
     print(
-        f"Room: open http://{bind}:{args.port}  (must run on the same Wi-Fi as the TV)",
+        f"Room {mode}: open http://{bind}:{args.port} in Safari on this Mac",
         flush=True,
     )
     uvicorn.run(create_app(hub, monitor=True), host=args.host, port=args.port, log_level="info")

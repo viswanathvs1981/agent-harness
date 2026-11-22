@@ -11,8 +11,9 @@ cd home-control
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-python -m home_control --demo          # sample devices, no LAN required
-python -m home_control                 # real scan of this Mac's Wi-Fi
+python -m home_control --plugin ~/Downloads/tv.py   # real TV
+python -m home_control                              # real scan, no plugin
+python -m home_control --demo                       # fake devices only; skip this unless you want a dry run
 ```
 
 Open [http://127.0.0.1:8787](http://127.0.0.1:8787) **on that Mac**. This Cursor Cloud chat cannot press buttons on your TV.
@@ -53,7 +54,7 @@ The hub UI already has a built-in command agent. There is also a Cursor Agent SD
 
 ```bash
 # terminal 1
-python -m home_control --demo   # or omit --demo on your home Wi-Fi
+python -m home_control --plugin ~/Downloads/tv.py
 
 # terminal 2
 cd ../room

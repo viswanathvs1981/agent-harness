@@ -12,6 +12,16 @@ def is_private_ip(value: str) -> bool:
     return bool(addr.is_private or addr.is_loopback or addr.is_link_local)
 
 
+def looks_like_cloud_lan(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        addr = ipaddress.ip_address(value.split("%")[0])
+    except ValueError:
+        return False
+    return addr in ipaddress.ip_network("172.16.0.0/12")
+
+
 def local_ipv4() -> str | None:
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

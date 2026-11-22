@@ -13,7 +13,7 @@ from home_control.demo import demo_devices
 from home_control.discovery import discover
 from home_control.intent import parse_intent
 from home_control.models import ChatResult, CommandResult, Device, Intent, NowPlaying, WatchEvent
-from home_control.net import is_private_ip, local_ipv4
+from home_control.net import is_private_ip, local_ipv4, looks_like_cloud_lan
 from home_control.plugins import command_via_plugin, devices_from_plugin, load_tv_plugin, plugin_paths
 from home_control.watch import (
     DEFAULT_PINS,
@@ -430,10 +430,16 @@ class Hub:
 
 
 def empty_network_hint(lan_ip: str | None, demo: bool, error: str | None, count: int) -> str:
+    cloud = (
+        " This page is Cursor Cloud (not your Mac). Close it. In Safari on your Mac open http://127.0.0.1:8787"
+        if looks_like_cloud_lan(lan_ip)
+        else ""
+    )
     if demo:
         return (
-            "DEMO — these TVs are fake. Mute and Power only change this page, not the Samsung in your house. "
-            "In Terminal press Ctrl+C, then run: python -m home_control --plugin ~/Downloads/tv.py"
+            "DEMO — these TVs are fake. Mute and Power only change this page, not the Samsung in your house."
+            f"{cloud} "
+            "In Terminal on your Mac press Ctrl+C, then run: python -m home_control --plugin ~/Downloads/tv.py"
         )
     where = f" This machine’s address is {lan_ip}." if lan_ip else " This machine has no private LAN address."
     if error:
@@ -446,7 +452,7 @@ def empty_network_hint(lan_ip: str | None, demo: bool, error: str | None, count:
     return (
         "No devices answered. This process can only see the Wi-Fi of the machine it is running on — "
         "a Cursor Cloud agent cannot reach your house."
-        f"{where} On a Mac on the same Wi-Fi as the TV, run: python3 -m home_control   "
+        f"{cloud}{where} On a Mac on the same Wi-Fi as the TV, run: python3 -m home_control   "
         "then open http://127.0.0.1:8787. Try Deep scan, or --plugin ~/Downloads/tv.py."
     )
 

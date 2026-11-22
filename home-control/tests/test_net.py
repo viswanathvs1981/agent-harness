@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from home_control.net import is_private_ip, classify_record
+from home_control.net import classify_record, is_private_ip, looks_like_cloud_lan
 
 
 class NetTests(unittest.TestCase):
@@ -13,6 +13,10 @@ class NetTests(unittest.TestCase):
         self.assertTrue(is_private_ip("127.0.0.1"))
         self.assertFalse(is_private_ip("8.8.8.8"))
         self.assertFalse(is_private_ip("1.1.1.1"))
+
+    def test_cloud_lan(self) -> None:
+        self.assertTrue(looks_like_cloud_lan("172.30.0.2"))
+        self.assertFalse(looks_like_cloud_lan("192.168.1.20"))
 
     def test_rejects_garbage(self) -> None:
         self.assertFalse(is_private_ip("not-an-ip"))

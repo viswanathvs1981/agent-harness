@@ -71,6 +71,11 @@ class HubTests(unittest.TestCase):
         self.assertIn("same Wi-Fi", hint)
         self.assertIn("python3 -m home_control", hint)
 
+    def test_demo_on_cloud_lan_says_close_this_page(self) -> None:
+        hint = empty_network_hint(lan_ip="172.30.0.2", demo=True, error=None, count=6)
+        self.assertIn("Cursor Cloud", hint)
+        self.assertIn("Safari", hint)
+
 
 class DashboardHubTests(unittest.IsolatedAsyncioTestCase):
     async def test_tick_records_now_playing(self) -> None:
