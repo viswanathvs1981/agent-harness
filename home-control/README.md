@@ -12,13 +12,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 python -m home_control --demo          # sample devices, no LAN required
-python -m home_control                 # real mDNS + SSDP scan
+python -m home_control                 # real scan of this Mac's Wi-Fi
 ```
 
-Open [http://127.0.0.1:8787](http://127.0.0.1:8787).
+Open [http://127.0.0.1:8787](http://127.0.0.1:8787) **on that Mac**. This Cursor Cloud chat cannot press buttons on your TV.
 
-- **Scan Wi-Fi** uses mDNS and SSDP (Roku, Chromecast, Sonos, HomeKit, printers, Hue, Home Assistant, …).
-- **Deep scan** also probes common ports on your `/24`. Use that only on a network you own.
+- **Scan Wi-Fi** uses mDNS, SSDP, and a unicast probe of TV/speaker ports (Roku 8060, Samsung 8001, Chromecast, Sonos, LG, Sony). That still works when the router filters multicast.
+- **Deep scan** also probes plugs, Home Assistant, printers, and media servers on your `/24`. Use that only on a network you own.
 - The agent understands phrases like `what's on my wifi`, `turn off the living room tv`, `mute the roku`, `turn on the bedroom plug`.
 
 ## Your `tv.py`
@@ -40,7 +40,8 @@ The plugin can expose `discover()` (list of dicts with `name`, `address`, `proto
 | Shelly / Tasmota | On / off |
 | Sonos | Play, pause, volume |
 | Sony Bravia | IRCC (set `HOME_CONTROL_SONY_PSK`) |
-| Samsung, LG, Chromecast, Apple TV | Discovered; control needs pairing or `tv.py` |
+| Samsung | Remote keys over websocket (accept the pairing prompt on the TV once) |
+| LG, Chromecast, Apple TV | Discovered; control needs pairing or `tv.py` |
 
 The hub only talks to private addresses (`10/8`, `172.16/12`, `192.168/16`, loopback).
 

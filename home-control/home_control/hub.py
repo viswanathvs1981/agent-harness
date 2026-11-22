@@ -18,6 +18,7 @@ class Hub:
         self.demo = demo
         self.plugin_path = plugin_path or os.environ.get("HOME_CONTROL_TV_PLUGIN")
         self.devices: dict[str, Device] = {}
+        self.last_error: str | None = None
         self.secrets = {
             "sony_psk": os.environ.get("HOME_CONTROL_SONY_PSK", ""),
         }
@@ -30,12 +31,19 @@ class Hub:
     def lan_ip(self) -> str | None:
         return local_ipv4()
 
+    def hint(self) -> str:
+        return empty_network_hint(self.lan_ip(), self.demo, self.last_error, len(self.devices))
+
     async def scan(self, deep: bool = False) -> list[Device]:
         found: list[Device] = []
+        self.last_error = None
         if self.demo:
             found.extend(demo_devices())
         else:
-            found.extend(await discover(timeout=3.0, deep=deep))
+            try:
+                found.extend(await discover(timeout=3.0, deep=deep))
+            except Exception as exc:
+                self.last_error = f"{exc.__class__.__name__}: {exc}"
         for device in self._plugin_devices():
             found.append(device)
         self._remember(found)
@@ -87,10 +95,7 @@ class Hub:
         if intent.action == "discover":
             found = await self.scan(deep=intent.deep)
             if not found:
-                return ChatResult(
-                    "No devices answered. Run this app on a computer on the same Wi-Fi as the TV.",
-                    intent,
-                )
+                return ChatResult(self.hint(), intent)
             listing = ", ".join(f"{item.name} ({item.kind})" for item in found)
             qualifier = "deep scan" if intent.deep else "scan"
             return ChatResult(f"{qualifier.capitalize()} found {len(found)} devices: {listing}.", intent, [item.id for item in found])
@@ -156,6 +161,28 @@ class Hub:
             return devices_from_plugin(module)
         except Exception:
             return []
+
+
+def empty_network_hint(lan_ip: str | None, demo: bool, error: str | None, count: int) -> str:
+    if demo:
+        return (
+            "Demo devices are loaded. Run this on a Mac on your home Wi-Fi without --demo "
+            "to talk to the real network."
+        )
+    where = f" This machine’s address is {lan_ip}." if lan_ip else " This machine has no private LAN address."
+    if error:
+        return (
+            f"Scan failed ({error}).{where} On a Mac on the same Wi-Fi as the TV, run: "
+            "python3 -m home_control   then open http://127.0.0.1:8787"
+        )
+    if count:
+        return ""
+    return (
+        "No devices answered. This process can only see the Wi-Fi of the machine it is running on — "
+        "a Cursor Cloud agent cannot reach your house."
+        f"{where} On a Mac on the same Wi-Fi as the TV, run: python3 -m home_control   "
+        "then open http://127.0.0.1:8787. Try Deep scan, or --plugin ~/Downloads/tv.py."
+    )
 
 
 def default_plugin_hint() -> str:

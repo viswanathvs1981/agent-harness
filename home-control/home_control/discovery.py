@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import socket
 import time
+from collections.abc import Awaitable, Sequence
 from urllib.parse import urlparse
 from xml.etree import ElementTree
 
@@ -38,9 +39,14 @@ MDNS_TYPES = [
 
 SSDP_ST = [
     "ssdp:all",
+    "upnp:rootdevice",
     "roku:ecp",
     "urn:dial-multiscreen-org:service:dial:1",
     "urn:schemas-upnp-org:device:MediaRenderer:1",
+    "urn:schemas-upnp-org:device:MediaServer:1",
+    "urn:lge-com:service:webos-second-screen:1",
+    "urn:samsung.com:device:RemoteControlReceiver:1",
+    "urn:schemas-sony-com:service:IRCC:1",
     "urn:Belkin:device:**",
 ]
 
@@ -51,12 +57,34 @@ PORT_HINTS = {
     8008: ("tv", "cast"),
     8009: ("tv", "cast"),
     1400: ("speaker", "sonos"),
+    3000: ("tv", "lg"),
+    3001: ("tv", "lg"),
+    9080: ("tv", "sony"),
     9999: ("plug", "kasa"),
     8123: ("hub", "homeassistant"),
     631: ("printer", "ipp"),
     32400: ("media", "plex"),
     8096: ("media", "jellyfin"),
+    7345: ("tv", "vizio"),
 }
+
+DEFAULT_PROBE_PORTS: tuple[int, ...] = (8060, 8001, 8008, 1400, 3000, 9080)
+DEEP_PROBE_PORTS: tuple[int, ...] = tuple(
+    dict.fromkeys(
+        [
+            *DEFAULT_PROBE_PORTS,
+            8002,
+            8009,
+            9999,
+            8123,
+            631,
+            32400,
+            8096,
+            3001,
+            7345,
+        ]
+    )
+)
 
 
 def capabilities_for(kind: str, protocol: str) -> list[str]:
@@ -74,16 +102,24 @@ def capabilities_for(kind: str, protocol: str) -> list[str]:
 
 async def discover(timeout: float = 3.0, deep: bool = False) -> list[Device]:
     found: dict[str, Device] = {}
-    mdns_task = asyncio.create_task(_mdns(timeout))
-    ssdp_task = asyncio.create_task(asyncio.to_thread(_ssdp, timeout))
-    mdns_devices, ssdp_devices = await asyncio.gather(mdns_task, ssdp_task)
-    for device in [*mdns_devices, *ssdp_devices]:
-        found[device.id] = device
-    if deep:
-        for device in await _port_sweep():
+    ports = DEEP_PROBE_PORTS if deep else DEFAULT_PROBE_PORTS
+    groups = await asyncio.gather(
+        _call(_mdns(timeout)),
+        _call(asyncio.to_thread(_ssdp, timeout)),
+        _call(_port_sweep(ports)),
+    )
+    for group in groups:
+        for device in group:
             found.setdefault(device.id, device)
-    await _enrich_roku(found)
+    await _enrich(found)
     return sorted(found.values(), key=lambda item: (item.kind, item.name.lower()))
+
+
+async def _call(awaitable: Awaitable[list[Device]]) -> list[Device]:
+    try:
+        return await awaitable
+    except Exception:
+        return []
 
 
 async def _mdns(timeout: float) -> list[Device]:
@@ -93,6 +129,7 @@ async def _mdns(timeout: float) -> list[Device]:
     except OSError:
         return devices
 
+    browser = None
     collected: list[tuple[str, str]] = []
 
     class Listener:
@@ -105,9 +142,18 @@ async def _mdns(timeout: float) -> list[Device]:
         def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
             return None
 
-    browser = AsyncServiceBrowser(azc.zeroconf, MDNS_TYPES, Listener())
-    await asyncio.sleep(timeout)
+        async def async_add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+            collected.append((type_, name))
+
+        async def async_update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+            return None
+
+        async def async_remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+            return None
+
     try:
+        browser = AsyncServiceBrowser(azc.zeroconf, MDNS_TYPES, Listener())
+        await asyncio.sleep(timeout)
         for type_, name in collected:
             info = await azc.async_get_service_info(type_, name, timeout=500)
             if info is None or not info.parsed_addresses():
@@ -131,9 +177,18 @@ async def _mdns(timeout: float) -> list[Device]:
                     extras={"source": "mdns", "service": type_},
                 )
             )
+    except Exception:
+        return devices
     finally:
-        await browser.async_cancel()
-        await azc.async_close()
+        if browser is not None:
+            try:
+                await browser.async_cancel()
+            except Exception:
+                pass
+        try:
+            await azc.async_close()
+        except Exception:
+            pass
     return devices
 
 
@@ -141,27 +196,32 @@ def _ssdp(timeout: float) -> list[Device]:
     devices: list[Device] = []
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.settimeout(timeout)
-    payload = "\r\n".join(
-        [
-            "M-SEARCH * HTTP/1.1",
-            "HOST: 239.255.255.250:1900",
-            'MAN: "ssdp:discover"',
-            "MX: 2",
-            "ST: ssdp:all",
-            "",
-            "",
-        ]
-    ).encode()
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    lan = local_ipv4()
+    if lan:
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(lan))
+        except OSError:
+            pass
+    sock.settimeout(0.4)
     try:
-        sock.sendto(payload, ("239.255.255.250", 1900))
+        for st in SSDP_ST:
+            payload = _ssdp_packet(st)
+            try:
+                sock.sendto(payload, ("239.255.255.250", 1900))
+            except OSError:
+                continue
+            try:
+                sock.sendto(payload, ("255.255.255.255", 1900))
+            except OSError:
+                pass
         deadline = time.time() + timeout
         seen: set[str] = set()
         while time.time() < deadline:
             try:
                 data, addr = sock.recvfrom(65535)
             except TimeoutError:
-                break
+                continue
             except OSError:
                 break
             ip = addr[0]
@@ -198,9 +258,25 @@ def _ssdp(timeout: float) -> list[Device]:
                     extras={"source": "ssdp", "location": location, "st": st},
                 )
             )
+    except OSError:
+        return devices
     finally:
         sock.close()
     return devices
+
+
+def _ssdp_packet(st: str) -> bytes:
+    return "\r\n".join(
+        [
+            "M-SEARCH * HTTP/1.1",
+            "HOST: 239.255.255.250:1900",
+            'MAN: "ssdp:discover"',
+            "MX: 2",
+            f"ST: {st}",
+            "",
+            "",
+        ]
+    ).encode()
 
 
 def _parse_ssdp(packet: str) -> dict[str, str]:
@@ -233,24 +309,27 @@ def _friendly_name(location: str) -> str | None:
     return None
 
 
-async def _port_sweep() -> list[Device]:
+async def _port_sweep(ports: Sequence[int] | None = None) -> list[Device]:
     ip = local_ipv4()
     if not ip:
         return []
     prefix = ".".join(ip.split(".")[:3])
-    ports = list(PORT_HINTS)
+    probe_ports = list(ports or DEFAULT_PROBE_PORTS)
     devices: list[Device] = []
     sem = asyncio.Semaphore(64)
 
     async def probe(host: str, port: int) -> None:
         async with sem:
             try:
-                reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), 0.25)
+                _reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), 0.15)
                 writer.close()
-                await writer.wait_closed()
+                try:
+                    await writer.wait_closed()
+                except OSError:
+                    pass
             except (OSError, asyncio.TimeoutError):
                 return
-            kind, protocol = PORT_HINTS[port]
+            kind, protocol = PORT_HINTS.get(port) or classify_record("", [], [port])
             devices.append(
                 Device(
                     id=device_id(protocol, host),
@@ -266,9 +345,14 @@ async def _port_sweep() -> list[Device]:
                 )
             )
 
-    tasks = [probe(f"{prefix}.{n}", port) for n in range(1, 255) for port in ports]
+    tasks = [probe(f"{prefix}.{n}", port) for n in range(1, 255) for port in probe_ports]
     await asyncio.gather(*tasks)
     return devices
+
+
+async def _enrich(found: dict[str, Device]) -> None:
+    await _enrich_roku(found)
+    await _enrich_samsung(found)
 
 
 async def _enrich_roku(found: dict[str, Device]) -> None:
@@ -293,6 +377,28 @@ async def _enrich_roku(found: dict[str, Device]) -> None:
             friendly = _xml_field(text, "user-device-name") or _xml_field(text, "friendly-device-name")
             if friendly:
                 device.name = friendly
+
+
+async def _enrich_samsung(found: dict[str, Device]) -> None:
+    targets = [device for device in found.values() if device.protocol == "samsung"]
+    if not targets:
+        return
+    async with httpx.AsyncClient(timeout=1.2) as client:
+        for device in targets:
+            port = device.port if device.port in {8001, 8002} else 8001
+            try:
+                response = await client.get(f"http://{device.address}:{port}/api/v2/")
+                response.raise_for_status()
+                info = response.json().get("device") or {}
+            except (httpx.HTTPError, ValueError, TypeError):
+                continue
+            name = info.get("name") or info.get("model")
+            if name:
+                device.name = str(name)
+            device.manufacturer = "Samsung"
+            if info.get("model"):
+                device.model = str(info["model"])
+            device.port = port
 
 
 def _xml_field(text: str, tag: str) -> str | None:

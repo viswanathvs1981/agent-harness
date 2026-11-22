@@ -2,6 +2,7 @@ const state = {
   devices: [],
   selected: null,
   demo: false,
+  hint: "",
 };
 
 const groupsEl = document.getElementById("groups");
@@ -46,7 +47,7 @@ function groupDevices(devices) {
 function renderDevices() {
   groupsEl.innerHTML = "";
   if (!state.devices.length) {
-    groupsEl.innerHTML = "<p class='meta'>Nothing yet. Scan this Wi-Fi.</p>";
+    groupsEl.innerHTML = `<p class="meta empty">${state.hint || "Nothing yet. Scan this Wi-Fi."}</p>`;
     return;
   }
   for (const [kind, items] of groupDevices(state.devices)) {
@@ -99,17 +100,20 @@ function select(id) {
   renderStage();
 }
 
+function updateBanner() {
+  const show = Boolean(state.hint) && (state.demo || !state.devices.length);
+  bannerEl.classList.toggle("hidden", !show);
+  bannerEl.textContent = state.hint || "";
+}
+
 async function refreshHealth() {
   const health = await api("/api/health");
   state.demo = health.demo;
+  state.hint = health.hint || "";
   lanEl.textContent = health.lan_ip
     ? `This machine: ${health.lan_ip}`
     : "No private LAN address on this host";
-  bannerEl.classList.toggle("hidden", !health.demo);
-  if (health.demo) {
-    bannerEl.textContent =
-      "Demo devices are loaded. Run this on a Mac on your home Wi-Fi without --demo to talk to the real network.";
-  }
+  updateBanner();
 }
 
 async function loadDevices() {
@@ -133,12 +137,17 @@ async function scan(deep) {
     body: JSON.stringify({ deep: Boolean(deep) }),
   });
   state.devices = data.devices || [];
+  state.hint = data.hint || state.hint;
   if (!state.selected && state.devices[0]) {
     state.selected = state.devices[0].id;
   }
   renderDevices();
   renderStage();
+  updateBanner();
   statusEl.textContent = `${state.devices.length} device${state.devices.length === 1 ? "" : "s"}`;
+  if (!state.devices.length && state.hint) {
+    say("agent", state.hint);
+  }
 }
 
 async function command(action, value) {

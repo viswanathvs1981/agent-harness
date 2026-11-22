@@ -19,6 +19,11 @@ def main() -> None:
     if args.demo:
         os.environ["HOME_CONTROL_DEMO"] = "1"
     hub = Hub(demo=args.demo, plugin_path=args.plugin)
+    bind = "127.0.0.1" if args.host in {"0.0.0.0", "::"} else args.host
+    print(
+        f"Room: open http://{bind}:{args.port}  (must run on the same Wi-Fi as the TV)",
+        flush=True,
+    )
     uvicorn.run(create_app(hub), host=args.host, port=args.port, log_level="info")
 
 

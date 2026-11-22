@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import json
+import os
 import socket
 import struct
 from typing import Any
@@ -109,11 +111,7 @@ def send_command(device: Device, action: str, value: Any = None, secrets: dict[s
         if device.protocol == "sony":
             return _sony(device, action, secrets.get("sony_psk", ""))
         if device.protocol == "samsung":
-            return CommandResult(
-                False,
-                "Samsung TVs need a one-time pairing prompt on the TV. Use the Roku/cast path or drop tv.py in plugins/.",
-                device.id,
-            )
+            return _samsung(device, action)
         if device.protocol in {"cast", "lg", "appletv", "firetv", "hue", "ipp", "plex", "jellyfin", "homeassistant", "unknown"}:
             return CommandResult(
                 False,
@@ -123,6 +121,129 @@ def send_command(device: Device, action: str, value: Any = None, secrets: dict[s
         return CommandResult(False, f"No adapter for {device.protocol}.", device.id)
     except (OSError, httpx.HTTPError) as exc:
         return CommandResult(False, f"{device.name} did not respond ({exc.__class__.__name__}).", device.id)
+
+
+def samsung_key_payload(key: str) -> dict[str, Any]:
+    return {
+        "method": "ms.remote.control",
+        "params": {
+            "Cmd": "Click",
+            "DataOfCmd": key,
+            "Option": "false",
+            "TypeOfRemote": "SendRemoteKey",
+        },
+    }
+
+
+def _samsung(device: Device, action: str) -> CommandResult:
+    key = SAMSUNG_KEYS.get(action)
+    if action == "launch":
+        key = "KEY_HOME"
+    if action == "volume_set":
+        return CommandResult(
+            False,
+            "Samsung remotes can raise and lower volume, but cannot set an absolute level.",
+            device.id,
+        )
+    if not key:
+        return CommandResult(False, f"No Samsung key for {action}.", device.id)
+    port = device.port if device.port in {8001, 8002} else 8001
+    _samsung_send(device.address, port, key)
+    if action == "launch":
+        return CommandResult(
+            True,
+            f"Opened Home on {device.name}. Samsung needs a plugin to launch a named app.",
+            device.id,
+        )
+    return CommandResult(
+        True,
+        f"Sent {action.replace('_', ' ')} to {device.name}. Accept the pairing prompt on the TV the first time.",
+        device.id,
+    )
+
+
+def _samsung_send(host: str, port: int, key: str) -> None:
+    name = base64.b64encode(b"Room").decode()
+    path = f"/api/v2/channels/samsung.remote.control?name={name}"
+    ws_key = base64.b64encode(os.urandom(16)).decode()
+    request = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}:{port}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {ws_key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n"
+    )
+    with socket.create_connection((host, port), timeout=3) as sock:
+        sock.sendall(request.encode())
+        header = _read_http_headers(sock)
+        status = header.split("\r\n", 1)[0]
+        if "101" not in status:
+            raise OSError(f"Samsung handshake failed: {status}")
+        try:
+            _ws_read_frame(sock)
+        except OSError:
+            pass
+        _ws_write_frame(sock, json.dumps(samsung_key_payload(key)).encode())
+        try:
+            _ws_read_frame(sock)
+        except OSError:
+            pass
+
+
+def _read_http_headers(sock: socket.socket) -> str:
+    buf = b""
+    while b"\r\n\r\n" not in buf:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise OSError("Samsung closed the websocket handshake")
+        buf += chunk
+        if len(buf) > 65536:
+            raise OSError("Samsung handshake too large")
+    return buf.decode("iso-8859-1")
+
+
+def _recv_exact(sock: socket.socket, count: int) -> bytes:
+    buf = b""
+    while len(buf) < count:
+        chunk = sock.recv(count - len(buf))
+        if not chunk:
+            raise OSError("short websocket read")
+        buf += chunk
+    return buf
+
+
+def _ws_write_frame(sock: socket.socket, payload: bytes) -> None:
+    mask = os.urandom(4)
+    header = bytearray([0x81])
+    length = len(payload)
+    if length < 126:
+        header.append(0x80 | length)
+    elif length < 65536:
+        header.append(0x80 | 126)
+        header.extend(struct.pack(">H", length))
+    else:
+        header.append(0x80 | 127)
+        header.extend(struct.pack(">Q", length))
+    header.extend(mask)
+    masked = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
+    sock.sendall(bytes(header) + masked)
+
+
+def _ws_read_frame(sock: socket.socket) -> bytes:
+    header = _recv_exact(sock, 2)
+    masked = header[1] & 0x80
+    length = header[1] & 0x7F
+    if length == 126:
+        length = struct.unpack(">H", _recv_exact(sock, 2))[0]
+    elif length == 127:
+        length = struct.unpack(">Q", _recv_exact(sock, 8))[0]
+    mask = _recv_exact(sock, 4) if masked else b""
+    payload = _recv_exact(sock, length)
+    if mask:
+        payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
+    return payload
 
 
 def _roku(device: Device, action: str, value: Any) -> CommandResult:

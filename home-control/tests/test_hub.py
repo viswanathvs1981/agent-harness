@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import AsyncMock, patch
 
-from home_control.hub import Hub
+from home_control.hub import Hub, empty_network_hint
 from home_control.intent import parse_intent
 from home_control.net import is_private_ip
 
@@ -51,6 +52,28 @@ class HubTests(unittest.TestCase):
 
     def test_refuses_public_ip(self) -> None:
         self.assertFalse(is_private_ip("8.8.8.8"))
+
+    def test_empty_hint_tells_user_to_run_on_mac(self) -> None:
+        hint = empty_network_hint(lan_ip="172.30.0.2", demo=False, error=None, count=0)
+        self.assertIn("127.0.0.1:8787", hint)
+        self.assertIn("same Wi-Fi", hint)
+        self.assertIn("python3 -m home_control", hint)
+
+
+class LiveHubTests(unittest.IsolatedAsyncioTestCase):
+    async def test_scan_does_not_raise_when_discover_fails(self) -> None:
+        hub = Hub(demo=False)
+        with patch("home_control.hub.discover", AsyncMock(side_effect=RuntimeError("lan down"))):
+            devices = await hub.scan()
+        self.assertEqual(devices, [])
+        self.assertTrue(hub.last_error)
+
+    async def test_chat_discover_explains_how_to_run_locally(self) -> None:
+        hub = Hub(demo=False)
+        with patch("home_control.hub.discover", AsyncMock(return_value=[])):
+            result = await hub.chat_async("what's on my wifi")
+        self.assertIn("127.0.0.1:8787", result.reply)
+        self.assertIn("python3 -m home_control", result.reply)
 
 
 if __name__ == "__main__":

@@ -45,6 +45,8 @@ def create_app(instance: Hub | None = None) -> FastAPI:
             "demo": state.demo,
             "lan_ip": state.lan_ip(),
             "devices": len(state.devices),
+            "hint": state.hint(),
+            "error": state.last_error,
         }
 
     @app.get("/api/devices")
@@ -55,7 +57,12 @@ def create_app(instance: Hub | None = None) -> FastAPI:
     async def scan(body: ScanBody | None = None) -> dict[str, Any]:
         deep = body.deep if body else False
         devices = await state.scan(deep=deep)
-        return {"devices": [item.to_dict() for item in devices], "deep": deep}
+        return {
+            "devices": [item.to_dict() for item in devices],
+            "deep": deep,
+            "hint": state.hint(),
+            "error": state.last_error,
+        }
 
     @app.post("/api/devices/{device_id}/command")
     def command(device_id: str, body: CommandBody) -> dict[str, Any]:

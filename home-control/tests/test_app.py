@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -17,6 +18,8 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Room", response.text)
         self.assertIn("Agent", response.text)
+        self.assertIn("127.0.0.1:8787", response.text)
+        self.assertIn("same Wi-Fi", response.text)
 
     def test_health_demo(self) -> None:
         response = self.client.get("/api/health")
@@ -42,5 +45,24 @@ class AppTests(unittest.TestCase):
         self.assertEqual(result.status_code, 404)
 
 
+class LiveAppTests(unittest.TestCase):
+    def test_health_includes_run_locally_hint(self) -> None:
+        client = TestClient(create_app(Hub(demo=False)))
+        data = client.get("/api/health").json()
+        self.assertFalse(data["demo"])
+        self.assertIn("hint", data)
+        self.assertIn("8787", data["hint"])
+
+    def test_scan_returns_hint_when_empty(self) -> None:
+        hub = Hub(demo=False)
+        with patch("home_control.hub.discover", AsyncMock(return_value=[])):
+            client = TestClient(create_app(hub))
+            data = client.post("/api/scan", json={"deep": False}).json()
+        self.assertEqual(data["devices"], [])
+        self.assertIn("hint", data)
+        self.assertIn("python3 -m home_control", data["hint"])
+
+
 if __name__ == "__main__":
     unittest.main()
+
