@@ -42,6 +42,16 @@ ROKU_KEYS = {
     "input": "InputHDMI1",
 }
 
+SAMSUNG_APPS = {
+    "netflix": "11101200001",
+    "youtube": "111299001912",
+    "prime": "3201512006785",
+    "hulu": "3201601007625",
+    "disney": "3201901017640",
+    "plex": "3201512006963",
+    "spotify": "3201606009684",
+}
+
 ROKU_APPS = {
     "netflix": "12",
     "youtube": "837",
@@ -116,7 +126,7 @@ def send_command(device: Device, action: str, value: Any = None, secrets: dict[s
         if device.protocol == "samsung":
             tokens = secrets.get("samsung_tokens") if isinstance(secrets.get("samsung_tokens"), dict) else {}
             token = str(tokens.get(device.id) or secrets.get("samsung_token") or "")
-            return _samsung(device, action, token)
+            return _samsung(device, action, token, value)
         if device.protocol in {"cast", "lg", "appletv", "firetv", "hue", "ipp", "plex", "jellyfin", "homeassistant", "unknown"}:
             return CommandResult(
                 False,
@@ -212,7 +222,7 @@ def _samsung_mac(device: Device) -> str | None:
     return None
 
 
-def _samsung(device: Device, action: str, token: str = "") -> CommandResult:
+def _samsung(device: Device, action: str, token: str = "", value: Any = None) -> CommandResult:
     if action == "power_on":
         mac = _samsung_mac(device)
         if mac:
@@ -230,9 +240,9 @@ def _samsung(device: Device, action: str, token: str = "") -> CommandResult:
             "Press the control stick under the center of the TV, or open the Fire TV / SmartThings app on your phone.",
             device.id,
         )
-    key = SAMSUNG_KEYS.get(action)
     if action == "launch":
-        key = "KEY_HOME"
+        return _samsung_launch(device, str(value or ""), token)
+    key = SAMSUNG_KEYS.get(action)
     if action == "volume_set":
         return CommandResult(
             False,
@@ -249,13 +259,6 @@ def _samsung(device: Device, action: str, token: str = "") -> CommandResult:
             last_error = exc
             continue
         state = {"token": info.get("token") or token, "port": port}
-        if action == "launch":
-            return CommandResult(
-                True,
-                f"Opened Home on {device.name}.",
-                device.id,
-                state,
-            )
         extra = " Paired and saved the TV token." if info.get("token") and not token else ""
         return CommandResult(
             True,
@@ -265,6 +268,36 @@ def _samsung(device: Device, action: str, token: str = "") -> CommandResult:
         )
     detail = f" ({last_error})" if last_error else ""
     return CommandResult(False, SAMSUNG_PAIR_HELP + detail, device.id)
+
+
+def _samsung_launch(device: Device, app: str, token: str) -> CommandResult:
+    app_id = SAMSUNG_APPS.get(app.lower().replace(" ", ""), app)
+    last_error: httpx.HTTPError | None = None
+    for scheme, port in (("http", 8001), ("https", 8002)):
+        try:
+            with httpx.Client(timeout=3.0, verify=False) as client:
+                url = f"{scheme}://{device.address}:{port}/api/v2/applications/{quote(str(app_id), safe='')}"
+                response = client.post(url)
+                if response.status_code >= 400:
+                    response = client.put(url)
+                response.raise_for_status()
+            return CommandResult(True, f"Opening {app} on {device.name}.", device.id, {"app": app})
+        except httpx.HTTPError as exc:
+            last_error = exc
+    try:
+        _samsung_send(device.address, 8002, "KEY_HOME", token=token)
+    except OSError:
+        try:
+            _samsung_send(device.address, 8001, "KEY_HOME", token=token)
+        except OSError:
+            detail = f" ({last_error})" if last_error else ""
+            return CommandResult(False, f"Could not open {app} on {device.name}.{detail}", device.id)
+    return CommandResult(
+        True,
+        f"Could not start {app} directly; opened Home on {device.name}. Pick {app} from the hub.",
+        device.id,
+        {"app": app},
+    )
 
 
 def _samsung_send(host: str, port: int, key: str, token: str = "") -> dict[str, str]:

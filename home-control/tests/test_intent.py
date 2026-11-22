@@ -53,6 +53,19 @@ class IntentTests(unittest.TestCase):
         self.assertEqual(intent.value, "youtube")
         self.assertEqual(intent.target_kind, "tv")
 
+    def test_switch_to_netflix(self) -> None:
+        intent = parse_intent("switch to netflix")
+        self.assertEqual(intent.action, "launch")
+        self.assertEqual(intent.value, "netflix")
+
+    def test_main_menu(self) -> None:
+        intent = parse_intent("show the main menu")
+        self.assertEqual(intent.action, "home")
+
+    def test_yes_is_confirm(self) -> None:
+        intent = parse_intent("yes")
+        self.assertEqual(intent.action, "confirm")
+
     def test_plug(self) -> None:
         intent = parse_intent("turn on the bedroom plug")
         self.assertEqual(intent.action, "power_on")

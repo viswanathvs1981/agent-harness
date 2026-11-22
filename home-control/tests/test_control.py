@@ -66,6 +66,18 @@ class SamsungControlTests(unittest.TestCase):
         self.assertEqual(packet[:6], b"\xff" * 6)
         self.assertEqual(len(packet), 102)
 
+    def test_launch_netflix_posts_application(self) -> None:
+        device = _samsung()
+        response = type("Resp", (), {"status_code": 200, "raise_for_status": lambda self: None})()
+        with patch("home_control.control.httpx.Client") as client_cls:
+            client = client_cls.return_value.__enter__.return_value
+            client.post.return_value = response
+            result = send_command(device, "launch", "netflix")
+        self.assertTrue(result.ok)
+        self.assertIn("netflix", result.message.lower())
+        client.post.assert_called()
+        self.assertIn("11101200001", client.post.call_args.args[0])
+
     def test_power_on_sends_wake_not_toggle(self) -> None:
         device = _samsung()
         device.extras["wifiMac"] = "aa:bb:cc:dd:ee:ff"

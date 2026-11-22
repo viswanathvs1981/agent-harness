@@ -97,6 +97,19 @@ def parse_intent(text: str) -> Intent:
     ):
         return Intent(action="now_playing", target_kind=kind or "tv", name_hint=name)
 
+    if re.fullmatch(r"(yes|yep|yeah|ok|okay|that one|the first|first one)", t.strip()):
+        return Intent(action="confirm")
+
+    if re.search(r"\b(main menu|smart hub|home screen|home menu)\b", t):
+        return Intent(action="home", target_kind=kind or "tv", name_hint=name)
+
+    app = _extract_app(t)
+    if app and (
+        re.search(r"\b(open|launch|start|play|switch|put on|go to|change to|watch)\b", t)
+        or t.strip() in {app, f"the {app}"}
+    ):
+        return Intent(action="launch", target_kind=kind or "tv", name_hint=name, value=app)
+
     if re.search(r"\bunpin\b", t):
         app = _extract_app(t)
         return Intent(action="unpin", target_kind=kind, name_hint=name, value=app)
@@ -111,19 +124,13 @@ def parse_intent(text: str) -> Intent:
     ):
         return Intent(action="help", target_kind=kind or "tv", name_hint=name)
 
-    if re.search(r"\b(list|show|what do you see)\b", t) and not re.search(
-        r"\b(turn|power|volume|mute|pause|play|scan|discover|watch|recommend)\b", t
-    ):
+    if re.search(r"\b(list devices|what do you see)\b", t) or re.fullmatch(r"(list|show devices)", t.strip()):
         return Intent(action="list", target_kind=kind, name_hint=name)
 
     if re.search(r"\b(hdmi\s*([1-4])|tuner|input)\b", t):
         match = re.search(r"hdmi\s*([1-4])", t)
         value = f"hdmi{match.group(1)}" if match else "input"
         return Intent(action="input", target_kind=kind or "tv", name_hint=name, value=value)
-
-    app = _extract_app(t)
-    if app and re.search(r"\b(open|launch|start|play)\b", t):
-        return Intent(action="launch", target_kind=kind or "tv", name_hint=name, value=app)
 
     volume = re.search(r"\bvolume(?:\s*(?:to|at|=))?\s*(\d{1,3})\b", t)
     if volume:

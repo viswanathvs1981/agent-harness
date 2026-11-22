@@ -58,6 +58,19 @@ class HubTests(unittest.TestCase):
         self.assertIn("Which one", result.reply)
         self.assertGreaterEqual(len(result.device_ids), 2)
 
+    def test_yes_confirms_pending_tv(self) -> None:
+        self.hub.chat("mute the tv")
+        result = self.hub.chat("yes")
+        self.assertTrue(result.command and result.command.ok)
+        self.assertIn("Muted", result.reply)
+
+    def test_samsung_word_confirms_pending(self) -> None:
+        self.hub.chat("mute the tv")
+        result = self.hub.chat("samsung")
+        self.assertTrue(result.command and result.command.ok)
+        device = self.hub.devices[result.device_ids[0]]
+        self.assertEqual(device.protocol, "samsung")
+
     def test_volume_on_named_speaker(self) -> None:
         result = self.hub.chat("set volume to 30 on the kitchen sonos")
         self.assertTrue(result.command and result.command.ok)

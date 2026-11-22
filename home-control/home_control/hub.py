@@ -49,6 +49,8 @@ class Hub:
         self._last_sample: dict[str, tuple[str, str | None]] = {}
         self._same_count: dict[str, int] = {}
         self.store_path = Path(store_path) if store_path else None
+        self.last_device_id: str | None = None
+        self.pending: tuple[Intent, list[Device]] | None = None
         self._load()
         if self.demo:
             self._remember(demo_devices())
@@ -92,7 +94,10 @@ class Hub:
         if device is None:
             return CommandResult(False, "I do not know that device. Scan first.")
         if self.demo or device.extras.get("demo"):
-            return self._demo_command(device, action, value)
+            result = self._demo_command(device, action, value)
+            if result.ok:
+                self.last_device_id = device.id
+            return result
         plugin = self._plugin_module()
         if plugin is not None and device.protocol in {"plugin", "tv"}:
             payload = command_via_plugin(plugin, device, action, value)
@@ -101,6 +106,8 @@ class Hub:
                 message = str(payload.get("message") or f"Sent {action} to {device.name}.")
                 return CommandResult(ok, message, device.id, dict(payload.get("state") or {}))
         result = send_command(device, action, value, self.secrets)
+        if result.ok:
+            self.last_device_id = device.id
         token = result.state.get("token")
         if result.ok and token:
             tokens = self.secrets.setdefault("samsung_tokens", {})
@@ -116,6 +123,9 @@ class Hub:
                 reply="Scanning the LAN is async from the UI. Use the Scan button, or POST /api/scan.",
                 intent=intent,
             )
+        resolved = self._resolve_pending(intent)
+        if resolved is not None:
+            return resolved
         devices = self.resolve(intent)
         if intent.action in {"help", "focus"}:
             useful = [item for item in devices if item.kind == "tv"] or [
@@ -140,10 +150,51 @@ class Hub:
         if not devices:
             return ChatResult("I could not match that to a device I have seen.", intent)
         if len(devices) > 1:
-            names = ", ".join(item.name for item in devices)
-            return ChatResult(f"Which one: {names}?", intent, [item.id for item in devices])
+            preferred = self._pick(devices)
+            if preferred is not None and self.last_device_id == preferred.id:
+                devices = [preferred]
+            else:
+                self.pending = (intent, devices)
+                names = ", ".join(item.name for item in devices)
+                return ChatResult(
+                    f"Which one: {names}? Say samsung, sony, or yes for the first.",
+                    intent,
+                    [item.id for item in devices],
+                )
         result = self.command(devices[0].id, intent.action, intent.value)
         return ChatResult(result.message, intent, [devices[0].id], result)
+
+    def _pick(self, devices: list[Device]) -> Device | None:
+        if not devices:
+            return None
+        for item in devices:
+            if item.id == self.last_device_id:
+                return item
+        return devices[0]
+
+    def _resolve_pending(self, intent: Intent) -> ChatResult | None:
+        if self.pending is None:
+            if intent.action == "confirm":
+                return ChatResult("I do not have a choice waiting. Say mute the samsung.", intent)
+            return None
+        pending_intent, pending_devices = self.pending
+        pick = None
+        if intent.action == "confirm":
+            pick = self._pick(pending_devices)
+        elif intent.action in {"focus", "help"} and intent.name_hint:
+            hint = intent.name_hint.lower()
+            matches = [
+                item
+                for item in pending_devices
+                if hint in item.name.lower() or hint in item.protocol.lower()
+            ]
+            if len(matches) == 1:
+                pick = matches[0]
+        if pick is None:
+            return None
+        self.pending = None
+        result = self.command(pick.id, pending_intent.action, pending_intent.value)
+        return ChatResult(result.message, pending_intent, [pick.id], result)
 
     async def chat_async(self, message: str) -> ChatResult:
         intent = parse_intent(message)
