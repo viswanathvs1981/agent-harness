@@ -20,6 +20,9 @@ class AppTests(unittest.TestCase):
         self.assertIn("Agent", response.text)
         self.assertIn("127.0.0.1:8787", response.text)
         self.assertIn("same Wi-Fi", response.text)
+        self.assertIn("Now", response.text)
+        self.assertIn("Recommendations", response.text)
+        self.assertIn("Accessed", response.text)
 
     def test_health_demo(self) -> None:
         response = self.client.get("/api/health")
@@ -43,6 +46,14 @@ class AppTests(unittest.TestCase):
     def test_missing_device(self) -> None:
         result = self.client.post("/api/devices/nope/command", json={"action": "power_off"})
         self.assertEqual(result.status_code, 404)
+
+    def test_dashboard_and_layout(self) -> None:
+        data = self.client.get("/api/dashboard").json()
+        self.assertTrue(data["now"])
+        self.assertTrue(data["recommendations"])
+        self.assertIn("netflix", data["pins"])
+        layout = self.client.put("/api/layout", json={"pins": ["youtube", "plex"]}).json()
+        self.assertEqual(layout["pins"], ["youtube", "plex"])
 
 
 class LiveAppTests(unittest.TestCase):

@@ -63,6 +63,27 @@ class IntentTests(unittest.TestCase):
         intent = parse_intent("list devices")
         self.assertEqual(intent.action, "list")
 
+    def test_now_playing(self) -> None:
+        intent = parse_intent("what's playing on the tv")
+        self.assertEqual(intent.action, "now_playing")
+
+    def test_wifi_scan_not_now_playing(self) -> None:
+        intent = parse_intent("what's on my wifi")
+        self.assertEqual(intent.action, "discover")
+
+    def test_recommend(self) -> None:
+        intent = parse_intent("what should I watch")
+        self.assertEqual(intent.action, "recommend")
+
+    def test_history(self) -> None:
+        intent = parse_intent("what have I been watching")
+        self.assertEqual(intent.action, "history")
+
+    def test_pin(self) -> None:
+        intent = parse_intent("pin youtube")
+        self.assertEqual(intent.action, "pin")
+        self.assertEqual(intent.value, "youtube")
+
     def test_remote_direction(self) -> None:
         intent = parse_intent("press right")
         self.assertEqual(intent.action, "right")

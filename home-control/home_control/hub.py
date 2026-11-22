@@ -1,20 +1,37 @@
 from __future__ import annotations
 
+import json
 import os
+import time
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from home_control.control import send_command
 from home_control.demo import demo_devices
 from home_control.discovery import discover
 from home_control.intent import parse_intent
-from home_control.models import ChatResult, CommandResult, Device, Intent
-from home_control.net import local_ipv4
+from home_control.models import ChatResult, CommandResult, Device, Intent, NowPlaying, WatchEvent
+from home_control.net import is_private_ip, local_ipv4
 from home_control.plugins import command_via_plugin, devices_from_plugin, load_tv_plugin, plugin_paths
+from home_control.watch import (
+    DEFAULT_PINS,
+    accessed_summary,
+    demo_sample,
+    parse_roku_active_app,
+    parse_roku_media_player,
+    recommendations,
+)
 
 
 class Hub:
-    def __init__(self, demo: bool = False, plugin_path: str | None = None) -> None:
+    def __init__(
+        self,
+        demo: bool = False,
+        plugin_path: str | None = None,
+        store_path: str | Path | None = None,
+    ) -> None:
         self.demo = demo
         self.plugin_path = plugin_path or os.environ.get("HOME_CONTROL_TV_PLUGIN")
         self.devices: dict[str, Device] = {}
@@ -22,11 +39,25 @@ class Hub:
         self.secrets = {
             "sony_psk": os.environ.get("HOME_CONTROL_SONY_PSK", ""),
         }
+        self.now: list[NowPlaying] = []
+        self.history: list[WatchEvent] = []
+        self.notes: list[str] = []
+        self.pins: list[str] = list(DEFAULT_PINS)
+        self.device_order: list[str] = []
+        self.ticks = 0
+        self._last_sample: dict[str, tuple[str, str | None]] = {}
+        self._same_count: dict[str, int] = {}
+        self.store_path = Path(store_path) if store_path else None
+        self._load()
         if self.demo:
             self._remember(demo_devices())
 
     def snapshot(self) -> list[Device]:
-        return sorted(self.devices.values(), key=lambda item: (item.kind, item.name.lower()))
+        order = {device_id: index for index, device_id in enumerate(self.device_order)}
+        return sorted(
+            self.devices.values(),
+            key=lambda item: (order.get(item.id, 1000), item.kind, item.name.lower()),
+        )
 
     def lan_ip(self) -> str | None:
         return local_ipv4()
@@ -62,7 +93,8 @@ class Hub:
                 ok = bool(payload.get("ok", True))
                 message = str(payload.get("message") or f"Sent {action} to {device.name}.")
                 return CommandResult(ok, message, device.id, dict(payload.get("state") or {}))
-        return send_command(device, action, value, self.secrets)
+        result = send_command(device, action, value, self.secrets)
+        return result
 
     def chat(self, message: str) -> ChatResult:
         intent = parse_intent(message)
@@ -99,7 +131,80 @@ class Hub:
             listing = ", ".join(f"{item.name} ({item.kind})" for item in found)
             qualifier = "deep scan" if intent.deep else "scan"
             return ChatResult(f"{qualifier.capitalize()} found {len(found)} devices: {listing}.", intent, [item.id for item in found])
+        if intent.action in {"now_playing", "history", "recommend", "pin", "unpin"}:
+            await self.tick()
+            return self._info_chat(intent)
         return self.chat(message)
+
+    async def tick(self) -> list[NowPlaying]:
+        self.ticks += 1
+        playing: list[NowPlaying] = []
+        for device in self.snapshot():
+            if device.kind not in {"tv", "speaker"}:
+                continue
+            item = await self._sample(device)
+            if item is None:
+                continue
+            playing.append(item)
+            key = (item.app, item.title)
+            if self._last_sample.get(device.id) != key:
+                self.history.append(
+                    WatchEvent(time.time(), device.id, device.name, item.app, item.title)
+                )
+                self.history = self.history[-200:]
+                self._same_count[device.id] = 1
+                self._last_sample[device.id] = key
+                device.extras["app"] = item.app
+                if item.title:
+                    device.extras["title"] = item.title
+                device.extras["watch_state"] = item.state
+            else:
+                self._same_count[device.id] = self._same_count.get(device.id, 0) + 1
+                if self._same_count[device.id] == 3:
+                    title = f" ({item.title})" if item.title else ""
+                    note = f"Still on {item.app}{title} on {device.name}."
+                    if not self.notes or self.notes[-1] != note:
+                        self.notes.append(note)
+                        self.notes = self.notes[-20:]
+        self.now = playing
+        self._save()
+        return playing
+
+    def dashboard(self) -> dict[str, Any]:
+        recs = recommendations(self.now, self.history, self.now[0].device_id if self.now else None)
+        return {
+            "now": [item.to_dict() for item in self.now],
+            "history": [item.to_dict() for item in reversed(self.history[-40:])],
+            "recommendations": [item.to_dict() for item in recs],
+            "accessed": accessed_summary(self.history),
+            "pins": list(self.pins),
+            "device_order": list(self.device_order),
+            "notes": list(self.notes),
+        }
+
+    def set_layout(self, pins: list[str] | None = None, device_order: list[str] | None = None) -> dict[str, Any]:
+        if pins is not None:
+            cleaned: list[str] = []
+            for pin in pins:
+                name = str(pin).strip().lower().replace(" ", "")
+                if name and name not in cleaned:
+                    cleaned.append(name)
+            self.pins = cleaned[:12]
+        if device_order is not None:
+            self.device_order = [str(item) for item in device_order if str(item) in self.devices]
+        self._save()
+        return {"pins": list(self.pins), "device_order": list(self.device_order)}
+
+    def pin_app(self, app: str | None, remove: bool = False) -> bool:
+        name = str(app or "").strip().lower().replace(" ", "")
+        if not name:
+            return False
+        if remove:
+            self.pins = [item for item in self.pins if item != name]
+        elif name not in self.pins:
+            self.pins.append(name)
+        self._save()
+        return True
 
     def resolve(self, intent: Intent) -> list[Device]:
         pool = self.snapshot()
@@ -117,7 +222,13 @@ class Hub:
             current = self.devices.get(device.id)
             if current and current.extras.get("demo") and device.extras.get("demo"):
                 device.extras = {**device.extras, **{k: current.extras.get(k, v) for k, v in device.extras.items()}}
-                device.extras.update({k: v for k, v in current.extras.items() if k in {"power", "volume", "muted", "app"}})
+                device.extras.update(
+                    {
+                        k: v
+                        for k, v in current.extras.items()
+                        if k in {"power", "volume", "muted", "app", "title", "launched", "watch_state"}
+                    }
+                )
             self.devices[device.id] = device
 
     def _demo_command(self, device: Device, action: str, value: Any) -> CommandResult:
@@ -138,8 +249,11 @@ class Hub:
             extras["volume"] = max(0, min(100, int(value or 0)))
         elif action == "launch":
             extras["app"] = str(value or "app")
+            extras["title"] = None
+            extras["launched"] = True
         elif action == "input":
             extras["app"] = str(value or "input")
+            extras["launched"] = True
         elif action not in device.capabilities:
             return CommandResult(False, f"{device.name} cannot {action.replace('_', ' ')}.", device.id)
         return CommandResult(True, _demo_message(device, action, value), device.id, dict(extras))
@@ -161,6 +275,139 @@ class Hub:
             return devices_from_plugin(module)
         except Exception:
             return []
+
+    def _info_chat(self, intent: Intent) -> ChatResult:
+        if intent.action == "pin":
+            ok = self.pin_app(str(intent.value) if intent.value else None)
+            if not ok:
+                return ChatResult("Name an app to pin, like pin youtube.", intent)
+            return ChatResult(f"Pinned {intent.value} on the remote.", intent)
+        if intent.action == "unpin":
+            ok = self.pin_app(str(intent.value) if intent.value else None, remove=True)
+            if not ok:
+                return ChatResult("Name an app to unpin.", intent)
+            return ChatResult(f"Removed {intent.value} from the remote.", intent)
+        if intent.action == "now_playing":
+            if not self.now:
+                return ChatResult(
+                    "Nothing is reporting as playing yet. Leave this page open and I will keep checking.",
+                    intent,
+                )
+            lines = [
+                f"{item.device_name}: {item.app}" + (f" — {item.title}" if item.title else "")
+                for item in self.now
+            ]
+            return ChatResult("Now: " + "; ".join(lines), intent, [item.device_id for item in self.now])
+        if intent.action == "history":
+            if not self.history:
+                return ChatResult("I have not seen any watching yet.", intent)
+            recent = self.history[-8:]
+            listing = ", ".join(
+                f"{item.app}" + (f" ({item.title})" if item.title else "") for item in recent
+            )
+            return ChatResult(f"Accessed this session: {listing}.", intent)
+        recs = recommendations(self.now, self.history, self.now[0].device_id if self.now else None)
+        if not recs:
+            return ChatResult("No recommendations yet. Watch something and I will suggest a follow-up.", intent)
+        text = " ".join(f"{item.app}: {item.reason}." for item in recs)
+        return ChatResult(text, intent, [item.device_id for item in recs if item.device_id])
+
+    async def _sample(self, device: Device) -> NowPlaying | None:
+        if self.demo or device.extras.get("demo"):
+            if device.extras.get("launched") and device.extras.get("app"):
+                return NowPlaying(
+                    device.id,
+                    device.name,
+                    str(device.extras["app"]),
+                    device.extras.get("title"),
+                    "play",
+                    "demo",
+                )
+            row = demo_sample(device.id, max(0, self.ticks - 1) // 3)
+            if not row:
+                return None
+            app, title, state = row
+            return NowPlaying(device.id, device.name, app, title, state, "demo")
+        if device.protocol == "roku" and is_private_ip(device.address):
+            return await self._sample_roku(device)
+        app = device.extras.get("app")
+        if app:
+            return NowPlaying(
+                device.id,
+                device.name,
+                str(app),
+                device.extras.get("title"),
+                str(device.extras.get("watch_state") or "unknown"),
+                device.protocol,
+            )
+        return None
+
+    async def _sample_roku(self, device: Device) -> NowPlaying | None:
+        try:
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                app_response = await client.get(f"http://{device.address}:8060/query/active-app")
+                app_response.raise_for_status()
+                player_text = ""
+                try:
+                    player_response = await client.get(f"http://{device.address}:8060/query/media-player")
+                    player_text = player_response.text
+                except httpx.HTTPError:
+                    player_text = ""
+        except httpx.HTTPError:
+            return None
+        app, _app_id = parse_roku_active_app(app_response.text)
+        player = parse_roku_media_player(player_text) if player_text else {}
+        title = player.get("title") or None
+        return NowPlaying(
+            device.id,
+            device.name,
+            app,
+            title,
+            player.get("state") or "unknown",
+            "roku",
+        )
+
+    def _load(self) -> None:
+        if self.store_path is None or not self.store_path.exists():
+            return
+        try:
+            payload = json.loads(self.store_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return
+        pins = payload.get("pins")
+        if isinstance(pins, list) and pins:
+            self.pins = [str(item) for item in pins][:12]
+        order = payload.get("device_order")
+        if isinstance(order, list):
+            self.device_order = [str(item) for item in order]
+        for raw in payload.get("history") or []:
+            try:
+                self.history.append(
+                    WatchEvent(
+                        at=float(raw["at"]),
+                        device_id=str(raw["device_id"]),
+                        device_name=str(raw["device_name"]),
+                        app=str(raw["app"]),
+                        title=raw.get("title"),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+        self.history = self.history[-200:]
+
+    def _save(self) -> None:
+        if self.store_path is None:
+            return
+        try:
+            self.store_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "pins": self.pins,
+                "device_order": self.device_order,
+                "history": [item.to_dict() for item in self.history[-200:]],
+            }
+            self.store_path.write_text(json.dumps(payload))
+        except OSError:
+            return
 
 
 def empty_network_hint(lan_ip: str | None, demo: bool, error: str | None, count: int) -> str:

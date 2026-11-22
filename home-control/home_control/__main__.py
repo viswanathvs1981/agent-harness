@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 
 import uvicorn
 
@@ -18,13 +19,14 @@ def main() -> None:
     args = parser.parse_args()
     if args.demo:
         os.environ["HOME_CONTROL_DEMO"] = "1"
-    hub = Hub(demo=args.demo, plugin_path=args.plugin)
+    store = Path.home() / ".room" / "state.json"
+    hub = Hub(demo=args.demo, plugin_path=args.plugin, store_path=store)
     bind = "127.0.0.1" if args.host in {"0.0.0.0", "::"} else args.host
     print(
         f"Room: open http://{bind}:{args.port}  (must run on the same Wi-Fi as the TV)",
         flush=True,
     )
-    uvicorn.run(create_app(hub), host=args.host, port=args.port, log_level="info")
+    uvicorn.run(create_app(hub, monitor=True), host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

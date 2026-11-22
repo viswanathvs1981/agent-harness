@@ -19,7 +19,9 @@ Open [http://127.0.0.1:8787](http://127.0.0.1:8787) **on that Mac**. This Cursor
 
 - **Scan Wi-Fi** uses mDNS, SSDP, and a unicast probe of TV/speaker ports (Roku 8060, Samsung 8001, Chromecast, Sonos, LG, Sony). That still works when the router filters multicast.
 - **Deep scan** also probes plugs, Home Assistant, printers, and media servers on your `/24`. Use that only on a network you own.
-- The agent understands phrases like `what's on my wifi`, `turn off the living room tv`, `mute the roku`, `turn on the bedroom plug`.
+- The webpage is the product: remote, **now playing**, **accessed history**, **recommendations**, and **pinned apps** you can reorder.
+- While that page is open, a background agent keeps checking the TVs (Roku reports the active app; demo mode simulates a watch session).
+- The agent understands phrases like `what's on my wifi`, `what's playing on the tv`, `what have I been watching`, `what should I watch`, `pin youtube`, `turn off the living room tv`.
 
 ## Your `tv.py`
 

@@ -82,13 +82,33 @@ def parse_intent(text: str) -> Intent:
     kind = _extract_kind(t)
     name = _extract_name(t, kind)
 
-    if re.search(r"\b(list|show|what do you see)\b", t) and not re.search(
-        r"\b(turn|power|volume|mute|pause|play|scan|discover)\b", t
-    ):
-        return Intent(action="list", target_kind=kind, name_hint=name)
-
     if re.search(r"\b(scan|discover|find devices|what(?:'s| is) on (?:my |the )?(?:wifi|wi-fi|network|lan))\b", t):
         return Intent(action="discover", target_kind=kind, name_hint=name, deep="deep" in t)
+
+    if re.search(r"\b(recommend|suggestion|what should i watch|what to watch)\b", t):
+        return Intent(action="recommend", target_kind=kind, name_hint=name)
+
+    if re.search(r"\b(what have i (?:been )?watch(?:ing)?|watch history|what did i watch|accessed)\b", t):
+        return Intent(action="history", target_kind=kind, name_hint=name)
+
+    if re.search(
+        r"\b(what(?:'s| is) (?:playing|on (?:the )?(?:tv|roku|samsung))|now playing|what am i watching|watching now)\b",
+        t,
+    ):
+        return Intent(action="now_playing", target_kind=kind or "tv", name_hint=name)
+
+    if re.search(r"\bunpin\b", t):
+        app = _extract_app(t)
+        return Intent(action="unpin", target_kind=kind, name_hint=name, value=app)
+
+    if re.search(r"\bpin\b", t):
+        app = _extract_app(t)
+        return Intent(action="pin", target_kind=kind, name_hint=name, value=app)
+
+    if re.search(r"\b(list|show|what do you see)\b", t) and not re.search(
+        r"\b(turn|power|volume|mute|pause|play|scan|discover|watch|recommend)\b", t
+    ):
+        return Intent(action="list", target_kind=kind, name_hint=name)
 
     if re.search(r"\b(hdmi\s*([1-4])|tuner|input)\b", t):
         match = re.search(r"hdmi\s*([1-4])", t)

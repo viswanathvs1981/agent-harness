@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -27,9 +30,26 @@ class ChatBody(BaseModel):
     message: str = Field(min_length=1)
 
 
-def create_app(instance: Hub | None = None) -> FastAPI:
-    app = FastAPI(title="Room", version="0.1.0")
+class LayoutBody(BaseModel):
+    pins: list[str] | None = None
+    device_order: list[str] | None = None
+
+
+def create_app(instance: Hub | None = None, monitor: bool = False) -> FastAPI:
     state = instance or hub
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        task = None
+        if monitor:
+            task = asyncio.create_task(_poll(state))
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+
+    app = FastAPI(title="Room", version="0.1.0", lifespan=lifespan)
 
     if WEB.exists():
         app.mount("/assets", StaticFiles(directory=WEB), name="assets")
@@ -76,7 +96,25 @@ def create_app(instance: Hub | None = None) -> FastAPI:
         result = await state.chat_async(body.message)
         return result.to_dict()
 
+    @app.get("/api/dashboard")
+    async def dashboard() -> dict[str, Any]:
+        await state.tick()
+        return state.dashboard()
+
+    @app.put("/api/layout")
+    def layout(body: LayoutBody) -> dict[str, Any]:
+        return state.set_layout(pins=body.pins, device_order=body.device_order)
+
     return app
+
+
+async def _poll(state: Hub) -> None:
+    while True:
+        try:
+            await state.tick()
+        except Exception:
+            pass
+        await asyncio.sleep(8 if state.demo else 20)
 
 
 app = create_app(hub)

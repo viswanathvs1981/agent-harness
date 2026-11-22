@@ -96,10 +96,49 @@ button.ghost {
   display: none;
 }
 
+.watching {
+  padding: 18px 24px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.watching-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.watching h1 {
+  margin: 0;
+}
+
+.now-cards {
+  display: flex;
+  gap: 10px;
+  overflow: auto;
+  padding-bottom: 8px;
+}
+
+.now-card {
+  min-width: 180px;
+  text-align: left;
+}
+
+.now-card strong {
+  display: block;
+  margin: 4px 0;
+  font-family: var(--font);
+}
+
+.now-card.active {
+  border-color: var(--accent);
+}
+
 main {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(280px, 1.2fr) minmax(260px, 1fr);
-  min-height: calc(100vh - 72px);
+  min-height: calc(100vh - 180px);
 }
 
 .panel {
@@ -130,13 +169,31 @@ h1 {
   font-weight: 500;
 }
 
+.device-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+  align-items: stretch;
+}
+
 .device {
-  width: 100%;
+  flex: 1;
+  width: auto;
   text-align: left;
-  margin: 0 0 6px;
+  margin: 0;
   display: flex;
   justify-content: space-between;
   gap: 8px;
+}
+
+.movers {
+  display: flex;
+  flex-direction: column;
+}
+
+.tiny {
+  padding: 2px 8px;
+  line-height: 1.2;
 }
 
 .device.active {
@@ -208,8 +265,47 @@ code {
   color: var(--danger);
 }
 
-.apps button {
+.apps {
+  flex-wrap: wrap;
+}
+
+.pin {
+  display: flex;
+  align-items: stretch;
+}
+
+.pin button:first-child {
   flex: 1;
+}
+
+.pin-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pin-label {
+  margin: 14px 0 8px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.rec {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.access {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .status {
@@ -218,8 +314,8 @@ code {
 }
 
 #log {
-  min-height: 240px;
-  max-height: calc(100vh - 260px);
+  min-height: 140px;
+  max-height: 240px;
   overflow: auto;
   border: 1px solid var(--line);
   padding: 12px;

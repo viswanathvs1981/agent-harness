@@ -60,6 +60,43 @@ class HubTests(unittest.TestCase):
         self.assertIn("python3 -m home_control", hint)
 
 
+class DashboardHubTests(unittest.IsolatedAsyncioTestCase):
+    async def test_tick_records_now_playing(self) -> None:
+        hub = Hub(demo=True)
+        playing = await hub.tick()
+        apps = {item.device_id: item.app for item in playing}
+        self.assertEqual(apps["roku-192-168-1-40"], "Netflix")
+        self.assertTrue(hub.history)
+
+    async def test_agent_notes_after_three_same_ticks(self) -> None:
+        hub = Hub(demo=True)
+        for _ in range(3):
+            await hub.tick()
+        self.assertTrue(any("Netflix" in note for note in hub.notes))
+
+    async def test_chat_now_playing(self) -> None:
+        hub = Hub(demo=True)
+        result = await hub.chat_async("what's playing on the tv")
+        self.assertIn("Netflix", result.reply)
+
+    async def test_chat_history_and_recommend(self) -> None:
+        hub = Hub(demo=True)
+        await hub.tick()
+        history = await hub.chat_async("what have I been watching")
+        self.assertIn("Netflix", history.reply)
+        recs = await hub.chat_async("what should I watch")
+        self.assertIn("youtube", recs.reply.lower())
+
+    async def test_pin_layout(self) -> None:
+        hub = Hub(demo=True)
+        result = await hub.chat_async("pin plex")
+        self.assertIn("Pinned", result.reply)
+        self.assertIn("plex", hub.pins)
+        hub.set_layout(device_order=["sonos-192-168-1-50", "roku-192-168-1-40"])
+        names = [item.id for item in hub.snapshot() if item.id in {"sonos-192-168-1-50", "roku-192-168-1-40"}]
+        self.assertEqual(names[0], "sonos-192-168-1-50")
+
+
 class LiveHubTests(unittest.IsolatedAsyncioTestCase):
     async def test_scan_does_not_raise_when_discover_fails(self) -> None:
         hub = Hub(demo=False)

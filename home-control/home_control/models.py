@@ -91,3 +91,38 @@ class ChatResult:
             "command": self.command.to_dict() if self.command else None,
         }
         return payload
+
+
+@dataclass
+class NowPlaying:
+    device_id: str
+    device_name: str
+    app: str
+    title: str | None = None
+    state: str = "unknown"
+    source: str = "poll"
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class WatchEvent:
+    at: float
+    device_id: str
+    device_name: str
+    app: str
+    title: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class Recommendation:
+    app: str
+    reason: str
+    device_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

@@ -22,6 +22,13 @@
       </div>
     </header>
     <p id="banner" class="banner hidden"></p>
+    <section class="watching">
+      <div class="watching-head">
+        <h1>Now</h1>
+        <p class="meta">The agent keeps checking while this page is open.</p>
+      </div>
+      <div id="now-cards" class="now-cards"></div>
+    </section>
     <main>
       <section class="panel devices">
         <h1>Devices</h1>
@@ -63,15 +70,20 @@
             <button data-action="mute">Mute</button>
             <button data-action="volume_up">Vol +</button>
           </div>
-          <div class="row apps">
-            <button data-action="launch" data-value="netflix">Netflix</button>
-            <button data-action="launch" data-value="youtube">YouTube</button>
-            <button data-action="launch" data-value="prime">Prime</button>
-          </div>
+          <p class="kicker pin-label">Your apps — pin what you want on this remote</p>
+          <div class="row apps" id="pins"></div>
+          <form id="pin-form" class="pin-form">
+            <input id="pin-app" name="pin" placeholder="pin youtube" autocomplete="off" />
+            <button type="submit">Pin</button>
+          </form>
         </div>
         <p id="status" class="status"></p>
       </section>
       <section class="panel agent">
+        <h1>Recommendations</h1>
+        <div id="recs" class="stack"></div>
+        <h1>Accessed</h1>
+        <div id="accessed" class="stack"></div>
         <h1>Agent</h1>
         <div id="log"></div>
         <form id="ask">
@@ -79,14 +91,15 @@
             id="prompt"
             name="prompt"
             autocomplete="off"
-            placeholder="Turn off the living room TV"
+            placeholder="What’s playing? Recommend something."
           />
           <button type="submit">Send</button>
         </form>
         <ul class="hints">
-          <li>what’s on my wifi</li>
-          <li>mute the roku</li>
-          <li>turn on the bedroom plug</li>
+          <li>what’s playing on the tv</li>
+          <li>what have I been watching</li>
+          <li>what should I watch</li>
+          <li>pin youtube</li>
         </ul>
       </section>
     </main>
