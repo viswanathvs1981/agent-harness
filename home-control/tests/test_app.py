@@ -18,6 +18,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Room", response.text)
         self.assertIn("Agent", response.text)
+        self.assertIn("id=\"brain\"", response.text)
         self.assertIn("127.0.0.1:8787", response.text)
         self.assertIn("same Wi-Fi", response.text)
         self.assertIn("Now", response.text)

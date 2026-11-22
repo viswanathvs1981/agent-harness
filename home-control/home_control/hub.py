@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from home_control.brain import load_anthropic_key, run_claude
 from home_control.control import send_command
 from home_control.demo import demo_devices
 from home_control.discovery import discover
@@ -31,9 +32,13 @@ class Hub:
         demo: bool = False,
         plugin_path: str | None = None,
         store_path: str | Path | None = None,
+        anthropic_key: str | None = None,
     ) -> None:
         self.demo = demo
         self.plugin_path = plugin_path or os.environ.get("HOME_CONTROL_TV_PLUGIN")
+        self.anthropic_key = load_anthropic_key() if anthropic_key is None else anthropic_key
+        self.anthropic_model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+        self.transcript: list[dict[str, str]] = []
         self.devices: dict[str, Device] = {}
         self.last_error: str | None = None
         self.secrets = {
@@ -196,7 +201,15 @@ class Hub:
         result = self.command(pick.id, pending_intent.action, pending_intent.value)
         return ChatResult(result.message, pending_intent, [pick.id], result)
 
-    async def chat_async(self, message: str) -> ChatResult:
+    async def chat_async(self, message: str, selected_id: str | None = None) -> ChatResult:
+        if self.anthropic_key:
+            try:
+                return await run_claude(self, message, selected_id)
+            except (httpx.HTTPError, OSError, ValueError, TypeError, RuntimeError):
+                pass
+        return await self._rules_chat_async(message)
+
+    async def _rules_chat_async(self, message: str) -> ChatResult:
         intent = parse_intent(message)
         if intent.action == "discover":
             found = await self.scan(deep=intent.deep)

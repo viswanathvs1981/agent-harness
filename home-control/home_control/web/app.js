@@ -291,6 +291,13 @@ async function refreshHealth() {
   lanEl.textContent = health.lan_ip
     ? `This machine: ${health.lan_ip}`
     : "No private LAN address on this host";
+  const brainEl = document.getElementById("brain");
+  if (brainEl) {
+    brainEl.textContent =
+      health.brain === "claude"
+        ? `Agent: Claude (${health.model || "sonnet"})`
+        : "Agent: local rules — add ~/.room/anthropic.key to use Claude";
+  }
   updateBanner();
 }
 
@@ -355,7 +362,7 @@ async function chat(text) {
   say("user", text);
   const result = await api("/api/chat", {
     method: "POST",
-    body: JSON.stringify({ message: text }),
+    body: JSON.stringify({ message: text, device_id: state.selected }),
   });
   say("agent", result.reply);
   await loadDevices();

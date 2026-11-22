@@ -28,6 +28,7 @@ class CommandBody(BaseModel):
 
 class ChatBody(BaseModel):
     message: str = Field(min_length=1)
+    device_id: str | None = None
 
 
 class LayoutBody(BaseModel):
@@ -67,6 +68,8 @@ def create_app(instance: Hub | None = None, monitor: bool = False) -> FastAPI:
             "devices": len(state.devices),
             "hint": state.hint(),
             "error": state.last_error,
+            "brain": "claude" if state.anthropic_key else "rules",
+            "model": state.anthropic_model if state.anthropic_key else None,
         }
 
     @app.get("/api/devices")
@@ -93,7 +96,7 @@ def create_app(instance: Hub | None = None, monitor: bool = False) -> FastAPI:
 
     @app.post("/api/chat")
     async def chat(body: ChatBody) -> dict[str, Any]:
-        result = await state.chat_async(body.message)
+        result = await state.chat_async(body.message, selected_id=body.device_id)
         return result.to_dict()
 
     @app.get("/api/dashboard")
