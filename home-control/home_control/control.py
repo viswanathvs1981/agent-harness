@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import socket
 import ssl
 import struct
@@ -53,8 +54,8 @@ ROKU_APPS = {
 }
 
 SAMSUNG_KEYS = {
-    "power_on": "KEY_POWER",
-    "power_off": "KEY_POWER",
+    "power_on": "KEY_POWERON",
+    "power_off": "KEY_POWEROFF",
     "power_toggle": "KEY_POWER",
     "volume_up": "KEY_VOLUP",
     "volume_down": "KEY_VOLDOWN",
@@ -158,7 +159,77 @@ def parse_samsung_event(raw: bytes | str) -> dict[str, str]:
     return {"event": event, "token": token}
 
 
+def parse_mac(value: str | None) -> str | None:
+    if not value:
+        return None
+    hexes = re.sub(r"[^0-9a-fA-F]", "", value)
+    if len(hexes) != 12:
+        return None
+    return ":".join(hexes[index : index + 2] for index in range(0, 12, 2)).lower()
+
+
+def wol_packet(mac: str) -> bytes:
+    parsed = parse_mac(mac)
+    if parsed is None:
+        raise ValueError("invalid mac")
+    raw = bytes.fromhex(parsed.replace(":", ""))
+    return b"\xff" * 6 + raw * 16
+
+
+def subnet_broadcast(ip: str) -> str:
+    parts = ip.split(".")
+    if len(parts) != 4:
+        return "255.255.255.255"
+    return ".".join([*parts[:3], "255"])
+
+
+def wake_on_lan(mac: str, broadcast: str = "255.255.255.255") -> None:
+    packet = wol_packet(mac)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.sendto(packet, (broadcast, 9))
+        sock.sendto(packet, ("255.255.255.255", 9))
+        sock.sendto(packet, (broadcast, 7))
+
+
+def _samsung_mac(device: Device) -> str | None:
+    for key in ("wifiMac", "mac", "wifi_mac"):
+        parsed = parse_mac(str(device.extras.get(key) or ""))
+        if parsed:
+            return parsed
+    for port in (8001, 8002):
+        try:
+            with httpx.Client(timeout=1.5, verify=False) as client:
+                response = client.get(f"http://{device.address}:{port}/api/v2/")
+                response.raise_for_status()
+                info = response.json().get("device") or {}
+        except (httpx.HTTPError, ValueError, TypeError):
+            continue
+        parsed = parse_mac(str(info.get("wifiMac") or info.get("wifi_mac") or info.get("mac") or ""))
+        if parsed:
+            device.extras["wifiMac"] = parsed
+            return parsed
+    return None
+
+
 def _samsung(device: Device, action: str, token: str = "") -> CommandResult:
+    if action == "power_on":
+        mac = _samsung_mac(device)
+        if mac:
+            wake_on_lan(mac, subnet_broadcast(device.address))
+            return CommandResult(
+                True,
+                "Sent a wake packet to the Samsung. Wait about 10 seconds for the picture. "
+                "Do not press Power (that toggles it off). Then press Mute to pair.",
+                device.id,
+                {"mac": mac},
+            )
+        return CommandResult(
+            False,
+            "The Samsung looks off and I could not wake it from the network. "
+            "Press the control stick under the center of the TV, or open the Fire TV / SmartThings app on your phone.",
+            device.id,
+        )
     key = SAMSUNG_KEYS.get(action)
     if action == "launch":
         key = "KEY_HOME"

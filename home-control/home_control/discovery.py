@@ -399,6 +399,9 @@ async def _enrich_samsung(found: dict[str, Device]) -> None:
             if info.get("model"):
                 device.model = str(info["model"])
             device.port = port
+            mac = info.get("wifiMac") or info.get("wifi_mac") or info.get("mac")
+            if mac:
+                device.extras["wifiMac"] = str(mac)
 
 
 def _xml_field(text: str, tag: str) -> str | None:
