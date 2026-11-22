@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Room</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <span class="mark"></span>
+        <div>
+          <strong>Room</strong>
+          <p id="lan">Looking for this LAN…</p>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="scan" type="button">Scan Wi-Fi</button>
+        <button id="deep" type="button" class="ghost">Deep scan</button>
+      </div>
+    </header>
+    <p id="banner" class="banner hidden"></p>
+    <main>
+      <section class="panel devices">
+        <h1>Devices</h1>
+        <div id="groups"></div>
+      </section>
+      <section class="panel stage">
+        <div id="now">
+          <p class="kicker">No device selected</p>
+          <h2>Scan, then pick a TV</h2>
+        </div>
+        <div class="remote" id="remote" hidden>
+          <div class="row">
+            <button data-action="power_toggle" class="power">Power</button>
+            <button data-action="input" data-value="hdmi1">Input</button>
+            <button data-action="home">Home</button>
+          </div>
+          <div class="pad">
+            <button data-action="up" class="dir">Up</button>
+            <div class="mid">
+              <button data-action="left" class="dir">Left</button>
+              <button data-action="select" class="ok">OK</button>
+              <button data-action="right" class="dir">Right</button>
+            </div>
+            <button data-action="down" class="dir">Down</button>
+          </div>
+          <div class="row">
+            <button data-action="back">Back</button>
+            <button data-action="play">Play</button>
+            <button data-action="pause">Pause</button>
+            <button data-action="info">Info</button>
+          </div>
+          <div class="row">
+            <button data-action="volume_down">Vol −</button>
+            <button data-action="mute">Mute</button>
+            <button data-action="volume_up">Vol +</button>
+          </div>
+          <div class="row apps">
+            <button data-action="launch" data-value="netflix">Netflix</button>
+            <button data-action="launch" data-value="youtube">YouTube</button>
+            <button data-action="launch" data-value="prime">Prime</button>
+          </div>
+        </div>
+        <p id="status" class="status"></p>
+      </section>
+      <section class="panel agent">
+        <h1>Agent</h1>
+        <div id="log"></div>
+        <form id="ask">
+          <input
+            id="prompt"
+            name="prompt"
+            autocomplete="off"
+            placeholder="Turn off the living room TV"
+          />
+          <button type="submit">Send</button>
+        </form>
+        <ul class="hints">
+          <li>what’s on my wifi</li>
+          <li>mute the roku</li>
+          <li>turn on the bedroom plug</li>
+        </ul>
+      </section>
+    </main>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

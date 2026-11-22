@@ -1,0 +1,23 @@
+"""Drop your Downloads/tv.py here or pass --plugin /path/to/tv.py.
+
+Expected surface:
+
+    def discover() -> list[dict]
+    def command(device: dict, action: str, value=None) -> dict
+"""
+
+
+def discover():
+    return [
+        {
+            "name": "Plugin TV",
+            "address": "192.168.1.42",
+            "port": 8060,
+            "protocol": "plugin",
+            "kind": "tv",
+        }
+    ]
+
+
+def command(device, action, value=None):
+    return {"ok": True, "message": f"{action} on {device.get('name')}", "state": {"last": action}}
