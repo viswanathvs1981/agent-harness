@@ -31,6 +31,23 @@ class HubTests(unittest.TestCase):
         self.assertIn("DEMO", result.reply)
         self.assertIn("house", result.reply.lower())
 
+    def test_list_skips_unknown_mdns_noise(self) -> None:
+        from home_control.models import Device
+
+        self.hub.devices["eero"] = Device(
+            id="eero",
+            name="eero",
+            kind="other",
+            manufacturer="eero",
+            model="mesh",
+            address="192.168.4.1",
+            port=0,
+            protocol="unknown",
+        )
+        result = self.hub.chat("list devices")
+        self.assertNotIn("eero", result.reply)
+        self.assertIn("Living Room Roku", result.reply)
+
     def test_focus_samsung_does_not_list_the_lamp(self) -> None:
         result = self.hub.chat("for samsung tv")
         self.assertNotIn("Desk Lamp", result.reply)

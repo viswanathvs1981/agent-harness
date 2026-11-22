@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from home_control.control import SAMSUNG_KEYS, samsung_key_payload, send_command
+from home_control.control import SAMSUNG_KEYS, parse_samsung_event, samsung_key_payload, send_command
 from home_control.models import TV_ACTIONS, Device
 
 
@@ -22,12 +22,26 @@ def _samsung() -> Device:
 
 
 class SamsungControlTests(unittest.TestCase):
-    def test_mute_sends_websocket_key(self) -> None:
-        with patch("home_control.control._samsung_send") as send:
+    def test_mute_tries_secure_port_first(self) -> None:
+        with patch(
+            "home_control.control._samsung_send",
+            return_value={"event": "ms.channel.connect", "token": "1"},
+        ) as send:
             result = send_command(_samsung(), "mute")
         self.assertTrue(result.ok)
-        send.assert_called_once_with("10.0.0.8", 8001, "KEY_MUTE")
+        self.assertEqual(send.call_args.args[:3], ("10.0.0.8", 8002, "KEY_MUTE"))
         self.assertIn("Bedroom TV", result.message)
+
+    def test_no_channel_explains_settings(self) -> None:
+        with patch("home_control.control._samsung_send", side_effect=OSError("no channel")):
+            result = send_command(_samsung(), "mute")
+        self.assertFalse(result.ok)
+        self.assertIn("Access Notification", result.message)
+
+    def test_parse_connect_token(self) -> None:
+        info = parse_samsung_event('{"event":"ms.channel.connect","data":{"token":"99"}}')
+        self.assertEqual(info["event"], "ms.channel.connect")
+        self.assertEqual(info["token"], "99")
 
     def test_payload_is_remote_click(self) -> None:
         payload = samsung_key_payload("KEY_VOLUP")

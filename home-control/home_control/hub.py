@@ -38,6 +38,7 @@ class Hub:
         self.last_error: str | None = None
         self.secrets = {
             "sony_psk": os.environ.get("HOME_CONTROL_SONY_PSK", ""),
+            "samsung_tokens": {},
         }
         self.now: list[NowPlaying] = []
         self.history: list[WatchEvent] = []
@@ -53,9 +54,15 @@ class Hub:
             self._remember(demo_devices())
 
     def snapshot(self) -> list[Device]:
+        mine = self.lan_ip()
         order = {device_id: index for index, device_id in enumerate(self.device_order)}
+        items = [
+            item
+            for item in self.devices.values()
+            if not mine or item.address != mine or item.extras.get("demo")
+        ]
         return sorted(
-            self.devices.values(),
+            items,
             key=lambda item: (order.get(item.id, 1000), item.kind, item.name.lower()),
         )
 
@@ -94,6 +101,12 @@ class Hub:
                 message = str(payload.get("message") or f"Sent {action} to {device.name}.")
                 return CommandResult(ok, message, device.id, dict(payload.get("state") or {}))
         result = send_command(device, action, value, self.secrets)
+        token = result.state.get("token")
+        if result.ok and token:
+            tokens = self.secrets.setdefault("samsung_tokens", {})
+            if isinstance(tokens, dict):
+                tokens[device.id] = str(token)
+                self._save()
         return result
 
     def chat(self, message: str) -> ChatResult:
@@ -105,15 +118,23 @@ class Hub:
             )
         devices = self.resolve(intent)
         if intent.action in {"help", "focus"}:
-            return ChatResult(self._help_reply(intent, devices), intent, [item.id for item in devices])
+            useful = [item for item in devices if item.kind == "tv"] or [
+                item for item in devices if item.kind in {"tv", "speaker", "plug", "light"}
+            ]
+            return ChatResult(self._help_reply(intent, useful), intent, [item.id for item in useful])
         if intent.action == "list":
             if not self.devices:
                 return ChatResult(
                     "I have not scanned yet. Ask me to scan, or press Scan in the UI.",
                     intent,
                 )
-            listing = ", ".join(f"{item.name} ({item.kind})" for item in devices or self.snapshot())
-            return ChatResult(f"On this network I see: {listing}.", intent, [item.id for item in devices or self.snapshot()])
+            shown = [
+                item
+                for item in (devices or self.snapshot())
+                if item.kind in {"tv", "speaker", "plug", "light"}
+            ] or (devices or self.snapshot())
+            listing = ", ".join(f"{item.name} ({item.kind})" for item in shown)
+            return ChatResult(f"On this network I see: {listing}.", intent, [item.id for item in shown])
         if not self.devices:
             return ChatResult("Scan the Wi-Fi first, then I can send that command.", intent)
         if not devices:
@@ -324,8 +345,9 @@ class Hub:
             )
         if devices and all(item.protocol == "samsung" for item in devices):
             return (
-                f"{names} is selected. Press Mute or Power on the remote, or say mute the samsung. "
-                "The first time, accept the pairing prompt on the TV."
+                f"{names} is selected. Put the TV on the Smart Hub home screen, then press Mute. "
+                "If no popup: Settings → General → External Device Manager → Device Connect Manager → Access Notification On. "
+                "Allow Room when the TV asks."
             )
         return (
             f"{names} is selected. Press a remote button, or say mute the samsung / turn off the living room tv."
@@ -413,6 +435,9 @@ class Hub:
             except (KeyError, TypeError, ValueError):
                 continue
         self.history = self.history[-200:]
+        tokens = payload.get("samsung_tokens")
+        if isinstance(tokens, dict):
+            self.secrets["samsung_tokens"] = {str(key): str(value) for key, value in tokens.items()}
 
     def _save(self) -> None:
         if self.store_path is None:
@@ -423,6 +448,7 @@ class Hub:
                 "pins": self.pins,
                 "device_order": self.device_order,
                 "history": [item.to_dict() for item in self.history[-200:]],
+                "samsung_tokens": self.secrets.get("samsung_tokens") or {},
             }
             self.store_path.write_text(json.dumps(payload))
         except OSError:

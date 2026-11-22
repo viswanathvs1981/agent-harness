@@ -4,7 +4,9 @@ import base64
 import json
 import os
 import socket
+import ssl
 import struct
+import time
 from typing import Any
 from urllib.parse import quote
 from xml.sax.saxutils import escape
@@ -111,7 +113,9 @@ def send_command(device: Device, action: str, value: Any = None, secrets: dict[s
         if device.protocol == "sony":
             return _sony(device, action, secrets.get("sony_psk", ""))
         if device.protocol == "samsung":
-            return _samsung(device, action)
+            tokens = secrets.get("samsung_tokens") if isinstance(secrets.get("samsung_tokens"), dict) else {}
+            token = str(tokens.get(device.id) or secrets.get("samsung_token") or "")
+            return _samsung(device, action, token)
         if device.protocol in {"cast", "lg", "appletv", "firetv", "hue", "ipp", "plex", "jellyfin", "homeassistant", "unknown"}:
             return CommandResult(
                 False,
@@ -135,7 +139,26 @@ def samsung_key_payload(key: str) -> dict[str, Any]:
     }
 
 
-def _samsung(device: Device, action: str) -> CommandResult:
+SAMSUNG_PAIR_HELP = (
+    "No pairing popup appeared. On the Samsung open Settings → General → "
+    "External Device Manager → Device Connect Manager and turn Access Notification On. "
+    "Go to the Smart Hub home screen (not Netflix), press Mute again, and look for an allow prompt for Room."
+)
+
+
+def parse_samsung_event(raw: bytes | str) -> dict[str, str]:
+    text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {"event": "", "token": ""}
+    event = str(payload.get("event") or "")
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    token = str(data.get("token") or "")
+    return {"event": event, "token": token}
+
+
+def _samsung(device: Device, action: str, token: str = "") -> CommandResult:
     key = SAMSUNG_KEYS.get(action)
     if action == "launch":
         key = "KEY_HOME"
@@ -147,24 +170,62 @@ def _samsung(device: Device, action: str) -> CommandResult:
         )
     if not key:
         return CommandResult(False, f"No Samsung key for {action}.", device.id)
-    port = device.port if device.port in {8001, 8002} else 8001
-    _samsung_send(device.address, port, key)
-    if action == "launch":
+    last_error: OSError | None = None
+    for port in (8002, 8001):
+        try:
+            info = _samsung_send(device.address, port, key, token=token)
+        except OSError as exc:
+            last_error = exc
+            continue
+        state = {"token": info.get("token") or token, "port": port}
+        if action == "launch":
+            return CommandResult(
+                True,
+                f"Opened Home on {device.name}.",
+                device.id,
+                state,
+            )
+        extra = " Paired and saved the TV token." if info.get("token") and not token else ""
         return CommandResult(
             True,
-            f"Opened Home on {device.name}. Samsung needs a plugin to launch a named app.",
+            f"Sent {action.replace('_', ' ')} to {device.name}.{extra}",
             device.id,
+            state,
         )
-    return CommandResult(
-        True,
-        f"Sent {action.replace('_', ' ')} to {device.name}. Accept the pairing prompt on the TV the first time.",
-        device.id,
-    )
+    detail = f" ({last_error})" if last_error else ""
+    return CommandResult(False, SAMSUNG_PAIR_HELP + detail, device.id)
 
 
-def _samsung_send(host: str, port: int, key: str) -> None:
-    name = base64.b64encode(b"Room").decode()
+def _samsung_send(host: str, port: int, key: str, token: str = "") -> dict[str, str]:
+    sock = _samsung_socket(host, port, token)
+    try:
+        sock.settimeout(12)
+        info = {"event": "", "token": ""}
+        deadline = time.time() + 12
+        while time.time() < deadline:
+            try:
+                frame = _ws_read_frame(sock)
+            except OSError:
+                break
+            info = parse_samsung_event(frame)
+            if info["event"] in {"ms.channel.connect", "ms.channel.unauthorized", "ms.error"}:
+                break
+        if info["event"] != "ms.channel.connect":
+            raise OSError(info["event"] or "samsung did not open a remote channel")
+        _ws_write_frame(sock, json.dumps(samsung_key_payload(key)).encode())
+        return info
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+
+def _samsung_socket(host: str, port: int, token: str) -> socket.socket:
+    name = quote(base64.b64encode(b"Room").decode(), safe="")
     path = f"/api/v2/channels/samsung.remote.control?name={name}"
+    if token:
+        path += f"&token={quote(token, safe='')}"
     ws_key = base64.b64encode(os.urandom(16)).decode()
     request = (
         f"GET {path} HTTP/1.1\r\n"
@@ -175,21 +236,20 @@ def _samsung_send(host: str, port: int, key: str) -> None:
         "Sec-WebSocket-Version: 13\r\n"
         "\r\n"
     )
-    with socket.create_connection((host, port), timeout=3) as sock:
-        sock.sendall(request.encode())
-        header = _read_http_headers(sock)
-        status = header.split("\r\n", 1)[0]
-        if "101" not in status:
-            raise OSError(f"Samsung handshake failed: {status}")
-        try:
-            _ws_read_frame(sock)
-        except OSError:
-            pass
-        _ws_write_frame(sock, json.dumps(samsung_key_payload(key)).encode())
-        try:
-            _ws_read_frame(sock)
-        except OSError:
-            pass
+    raw = socket.create_connection((host, port), timeout=8)
+    sock: socket.socket = raw
+    if port == 8002:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        sock = ctx.wrap_socket(raw, server_hostname=host)
+    sock.sendall(request.encode())
+    header = _read_http_headers(sock)
+    status = header.split("\r\n", 1)[0]
+    if "101" not in status:
+        sock.close()
+        raise OSError(f"Samsung handshake failed on {port}: {status}")
+    return sock
 
 
 def _read_http_headers(sock: socket.socket) -> str:

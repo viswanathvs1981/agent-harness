@@ -67,6 +67,14 @@ class IntentTests(unittest.TestCase):
         intent = parse_intent("what's playing on the tv")
         self.assertEqual(intent.action, "now_playing")
 
+    def test_curly_apostrophe_now_playing(self) -> None:
+        intent = parse_intent("what’s playing on the tv")
+        self.assertEqual(intent.action, "now_playing")
+
+    def test_pairing_prompt_is_help(self) -> None:
+        intent = parse_intent("i dont see a pairing prompt")
+        self.assertEqual(intent.action, "help")
+
     def test_wifi_scan_not_now_playing(self) -> None:
         intent = parse_intent("what's on my wifi")
         self.assertEqual(intent.action, "discover")
