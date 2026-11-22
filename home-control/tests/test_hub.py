@@ -21,8 +21,20 @@ class HubTests(unittest.TestCase):
     def test_turn_off_living_room_tv(self) -> None:
         result = self.hub.chat("turn off the living room tv")
         self.assertIn("Living Room Roku", result.reply)
+        self.assertIn("Demo only", result.reply)
         device = self.hub.devices[result.device_ids[0]]
         self.assertFalse(device.extras["power"])
+
+    def test_help_explains_demo_is_not_the_house_tv(self) -> None:
+        result = self.hub.chat("why are no controls working for samsung tv")
+        self.assertEqual(result.intent.action, "help")
+        self.assertIn("DEMO", result.reply)
+        self.assertIn("house", result.reply.lower())
+
+    def test_focus_samsung_does_not_list_the_lamp(self) -> None:
+        result = self.hub.chat("for samsung tv")
+        self.assertNotIn("Desk Lamp", result.reply)
+        self.assertIn("Samsung", result.reply)
 
     def test_ambiguous_tv(self) -> None:
         result = self.hub.chat("mute the tv")

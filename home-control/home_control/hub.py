@@ -104,6 +104,8 @@ class Hub:
                 intent=intent,
             )
         devices = self.resolve(intent)
+        if intent.action in {"help", "focus"}:
+            return ChatResult(self._help_reply(intent, devices), intent, [item.id for item in devices])
         if intent.action == "list":
             if not self.devices:
                 return ChatResult(
@@ -312,6 +314,23 @@ class Hub:
         text = " ".join(f"{item.app}: {item.reason}." for item in recs)
         return ChatResult(text, intent, [item.device_id for item in recs if item.device_id])
 
+    def _help_reply(self, intent: Intent, devices: list[Device]) -> str:
+        names = ", ".join(item.name for item in devices) if devices else "a TV"
+        if self.demo:
+            return (
+                f"{names} is a DEMO device. The remote only changes this webpage, not the TV in your house. "
+                "In Terminal press Ctrl+C, then run: python -m home_control --plugin ~/Downloads/tv.py "
+                "On a real Samsung, look at the TV for a pairing prompt the first time, then say mute the samsung."
+            )
+        if devices and all(item.protocol == "samsung" for item in devices):
+            return (
+                f"{names} is selected. Press Mute or Power on the remote, or say mute the samsung. "
+                "The first time, accept the pairing prompt on the TV."
+            )
+        return (
+            f"{names} is selected. Press a remote button, or say mute the samsung / turn off the living room tv."
+        )
+
     async def _sample(self, device: Device) -> NowPlaying | None:
         if self.demo or device.extras.get("demo"):
             if device.extras.get("launched") and device.extras.get("app"):
@@ -413,8 +432,8 @@ class Hub:
 def empty_network_hint(lan_ip: str | None, demo: bool, error: str | None, count: int) -> str:
     if demo:
         return (
-            "Demo devices are loaded. Run this on a Mac on your home Wi-Fi without --demo "
-            "to talk to the real network."
+            "DEMO — these TVs are fake. Mute and Power only change this page, not the Samsung in your house. "
+            "In Terminal press Ctrl+C, then run: python -m home_control --plugin ~/Downloads/tv.py"
         )
     where = f" This machine’s address is {lan_ip}." if lan_ip else " This machine has no private LAN address."
     if error:
@@ -439,13 +458,15 @@ def default_plugin_hint() -> str:
 
 def _demo_message(device: Device, action: str, value: Any) -> str:
     if action == "power_on":
-        return f"Turned {device.name} on."
-    if action == "power_off":
-        return f"Turned {device.name} off."
-    if action == "mute":
-        return f"{'Muted' if device.extras.get('muted') else 'Unmuted'} {device.name}."
-    if action.startswith("volume"):
-        return f"{device.name} volume is {device.extras.get('volume')}."
-    if action == "launch":
-        return f"Opening {value} on {device.name}."
-    return f"Sent {action.replace('_', ' ')} to {device.name}."
+        body = f"Turned {device.name} on."
+    elif action == "power_off":
+        body = f"Turned {device.name} off."
+    elif action == "mute":
+        body = f"{'Muted' if device.extras.get('muted') else 'Unmuted'} {device.name}."
+    elif action.startswith("volume"):
+        body = f"{device.name} volume is {device.extras.get('volume')}."
+    elif action == "launch":
+        body = f"Opening {value} on {device.name}."
+    else:
+        body = f"Sent {action.replace('_', ' ')} to {device.name}."
+    return f"{body} Demo only — your house TV did not hear that."

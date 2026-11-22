@@ -84,6 +84,16 @@ class IntentTests(unittest.TestCase):
         self.assertEqual(intent.action, "pin")
         self.assertEqual(intent.value, "youtube")
 
+    def test_help_controls_not_working(self) -> None:
+        intent = parse_intent("why are no controls working")
+        self.assertEqual(intent.action, "help")
+
+    def test_focus_samsung(self) -> None:
+        intent = parse_intent("for samsung tv")
+        self.assertEqual(intent.action, "focus")
+        self.assertEqual(intent.target_kind, "tv")
+        self.assertEqual(intent.name_hint, "samsung")
+
     def test_remote_direction(self) -> None:
         intent = parse_intent("press right")
         self.assertEqual(intent.action, "right")

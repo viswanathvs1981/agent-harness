@@ -105,6 +105,12 @@ def parse_intent(text: str) -> Intent:
         app = _extract_app(t)
         return Intent(action="pin", target_kind=kind, name_hint=name, value=app)
 
+    if re.search(
+        r"\b(not working|doesn'?t work|do not work|no controls|why .*(work|control)|how do i|help)\b",
+        t,
+    ):
+        return Intent(action="help", target_kind=kind, name_hint=name)
+
     if re.search(r"\b(list|show|what do you see)\b", t) and not re.search(
         r"\b(turn|power|volume|mute|pause|play|scan|discover|watch|recommend)\b", t
     ):
@@ -164,6 +170,8 @@ def parse_intent(text: str) -> Intent:
     if re.search(r"\bchannel down\b", t):
         return Intent(action="channel_down", target_kind=kind or "tv", name_hint=name)
 
+    if kind or name:
+        return Intent(action="focus", target_kind=kind, name_hint=name)
     return Intent(action="list", target_kind=kind, name_hint=name)
 
 
