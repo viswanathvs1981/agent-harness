@@ -22,18 +22,8 @@ Open [http://127.0.0.1:8787](http://127.0.0.1:8787) **on that Mac**. This Cursor
 - **Deep scan** also probes plugs, Home Assistant, printers, and media servers on your `/24`. Use that only on a network you own.
 - The webpage is the product: remote, **now playing**, **accessed history**, **recommendations**, and **pinned apps** you can reorder.
 - While that page is open, a background agent keeps checking the TVs (Roku reports the active app; demo mode simulates a watch session).
-- Chat uses **Claude** when a key is present (`ANTHROPIC_API_KEY` or `~/.room/anthropic.key`). Without a key it falls back to local phrase matching.
-- Do not paste the key into Cursor chat. On the Mac:
-
-```bash
-mkdir -p ~/.room
-chmod 700 ~/.room
-umask 077
-printf '%s\n' 'sk-ant-your-key' > ~/.room/anthropic.key
-# or: export ANTHROPIC_API_KEY='sk-ant-your-key'
-```
-
-Then restart `python -m home_control`. The page should say **Agent: Claude**. TV buttons still leave from this Mac, not from Anthropic. Optional: `ANTHROPIC_MODEL` (default `claude-sonnet-4-5`).
+- Chat uses **Claude**. On first run the Terminal asks for the Anthropic key (the typing is hidden), then saves it to `~/.room/anthropic.key` and starts the hub. Later runs reuse that file. There is a placeholder in `home_control/secrets.py` (`sk-ant-your-key`) if you prefer to paste the key there instead — do not commit it, and do not paste the key into Cursor chat.
+- Re-prompt with `python -m home_control --reset-claude-key`. Skip Claude with `--skip-claude`. Optional: `ANTHROPIC_MODEL` (default `claude-sonnet-4-5`). TV buttons still leave from this Mac, not from Anthropic. The page should say **Agent: Claude**.
 
 ## Your `tv.py`
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import getpass
 import json
 import os
+import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +16,16 @@ ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 DEFAULT_MODEL = "claude-sonnet-4-5"
 MAX_ROUNDS = 6
 ALLOWED_COMMANDS = frozenset(TV_ACTIONS) | frozenset(SWITCH_ACTIONS)
+PLACEHOLDER_KEYS = frozenset(
+    {
+        "",
+        "sk-ant-your-key",
+        "your_key_here",
+        "your-key-here",
+        "paste-key-here",
+        "changeme",
+    }
+)
 
 SYSTEM = """You are Room, a local home-control agent.
 You talk to TVs, speakers, plugs, and lights on this Wi-Fi only through tools.
@@ -73,21 +86,82 @@ TOOLS = [
 ]
 
 
+def key_store_path() -> Path:
+    return Path.home() / ".room" / "anthropic.key"
+
+
+def _clean_key(value: str | None) -> str:
+    key = (value or "").strip()
+    if key.lower() in PLACEHOLDER_KEYS:
+        return ""
+    return key
+
+
+def placeholder_key() -> str:
+    try:
+        from home_control.secrets import ANTHROPIC_API_KEY
+    except Exception:
+        return ""
+    return _clean_key(str(ANTHROPIC_API_KEY or ""))
+
+
 def load_anthropic_key() -> str:
-    env = (
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("HOME_CONTROL_ANTHROPIC_KEY")
-        or ""
-    ).strip()
+    env = _clean_key(
+        os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("HOME_CONTROL_ANTHROPIC_KEY") or ""
+    )
     if env:
         return env
-    path = Path.home() / ".room" / "anthropic.key"
+    path = key_store_path()
     try:
         if path.is_file():
-            return path.read_text(encoding="utf-8").strip()
+            stored = _clean_key(path.read_text(encoding="utf-8"))
+            if stored:
+                return stored
     except OSError:
+        pass
+    return placeholder_key()
+
+
+def save_anthropic_key(key: str, path: Path | None = None) -> Path:
+    cleaned = _clean_key(key)
+    if not cleaned:
+        raise ValueError("empty key")
+    dest = path or key_store_path()
+    dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    dest.write_text(cleaned + "\n", encoding="utf-8")
+    dest.chmod(0o600)
+    return dest
+
+
+def ensure_anthropic_key(
+    *,
+    reset: bool = False,
+    prompt: bool = True,
+    reader: Callable[[], str] | None = None,
+) -> str:
+    if not reset:
+        existing = load_anthropic_key()
+        if existing:
+            return existing
+    if not prompt:
         return ""
-    return ""
+    if reader is None:
+        if not sys.stdin.isatty():
+            return ""
+        reader = lambda: getpass.getpass(
+            "Anthropic API key (hidden; saved to ~/.room/anthropic.key): "
+        )
+    try:
+        typed = _clean_key(reader())
+    except (EOFError, KeyboardInterrupt, OSError):
+        typed = ""
+    if not typed:
+        print("No Claude key entered. Chat will use local rules.", flush=True)
+        return ""
+    save_anthropic_key(typed)
+    os.environ["ANTHROPIC_API_KEY"] = typed
+    print("Saved Claude key to ~/.room/anthropic.key", flush=True)
+    return typed
 
 
 def public_device(device: Any) -> dict[str, Any]:

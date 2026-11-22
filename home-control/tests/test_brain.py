@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -8,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from home_control.app import create_app
-from home_control.brain import load_anthropic_key, run_claude
+from home_control.brain import ensure_anthropic_key, load_anthropic_key, run_claude
 from home_control.hub import Hub
 from fastapi.testclient import TestClient
 
@@ -32,6 +33,55 @@ class LoadKeyTests(unittest.TestCase):
                 key_path.parent.mkdir(parents=True, exist_ok=True)
                 key_path.write_text(" sk-file \n")
                 self.assertEqual(load_anthropic_key(), "sk-file")
+
+    def test_placeholder_in_secrets_is_empty(self) -> None:
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "", "HOME_CONTROL_ANTHROPIC_KEY": ""}, clear=False):
+            with patch("home_control.brain.Path.home", return_value=Path("/tmp/no-room-home-placeholder")):
+                self.assertEqual(load_anthropic_key(), "")
+
+    def test_prompt_saves_hidden_key(self) -> None:
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "", "HOME_CONTROL_ANTHROPIC_KEY": ""}, clear=False):
+            with patch("home_control.brain.Path.home") as home:
+                root = Path("/tmp/room-key-prompt")
+                home.return_value = root
+                key_path = root / ".room" / "anthropic.key"
+                if key_path.exists():
+                    key_path.unlink()
+                try:
+                    got = ensure_anthropic_key(reader=lambda: "  sk-prompted-key  ")
+                    self.assertEqual(got, "sk-prompted-key")
+                    self.assertEqual(key_path.read_text(encoding="utf-8").strip(), "sk-prompted-key")
+                    self.assertEqual(key_path.stat().st_mode & 0o777, 0o600)
+                finally:
+                    os.environ.pop("ANTHROPIC_API_KEY", None)
+
+    def test_does_not_prompt_when_key_already_saved(self) -> None:
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "", "HOME_CONTROL_ANTHROPIC_KEY": ""}, clear=False):
+            with patch("home_control.brain.Path.home") as home:
+                root = Path("/tmp/room-key-existing")
+                home.return_value = root
+                key_path = root / ".room" / "anthropic.key"
+                key_path.parent.mkdir(parents=True, exist_ok=True)
+                key_path.write_text("sk-already\n")
+                called = []
+                got = ensure_anthropic_key(reader=lambda: called.append("x") or "sk-new")
+                self.assertEqual(got, "sk-already")
+                self.assertEqual(called, [])
+
+    def test_reset_prompts_again(self) -> None:
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "", "HOME_CONTROL_ANTHROPIC_KEY": ""}, clear=False):
+            with patch("home_control.brain.Path.home") as home:
+                root = Path("/tmp/room-key-reset")
+                home.return_value = root
+                key_path = root / ".room" / "anthropic.key"
+                key_path.parent.mkdir(parents=True, exist_ok=True)
+                key_path.write_text("sk-old\n")
+                try:
+                    got = ensure_anthropic_key(reset=True, reader=lambda: "sk-new")
+                    self.assertEqual(got, "sk-new")
+                    self.assertEqual(key_path.read_text(encoding="utf-8").strip(), "sk-new")
+                finally:
+                    os.environ.pop("ANTHROPIC_API_KEY", None)
 
 
 class ClaudeChatTests(unittest.IsolatedAsyncioTestCase):

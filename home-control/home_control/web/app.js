@@ -296,7 +296,7 @@ async function refreshHealth() {
     brainEl.textContent =
       health.brain === "claude"
         ? `Agent: Claude (${health.model || "sonnet"})`
-        : "Agent: local rules — add ~/.room/anthropic.key to use Claude";
+        : "Agent: local rules — restart from Terminal; it will ask for the Claude key";
   }
   updateBanner();
 }
